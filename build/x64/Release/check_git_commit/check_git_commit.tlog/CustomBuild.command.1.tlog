@@ -1,0 +1,24 @@
+^D:\DEVELOPMENT\PROJECT\PUTTY-AI\BUILD\CMAKEFILES\401BCC21D2862417D19C1345F58FFE90\CHECK_GIT_COMMIT.RULE
+setlocal
+cd D:\development\Project\putty-ai\putty-src
+if %errorlevel% neq 0 goto :cmEnd
+D:
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -DGIT_EXECUTABLE=E:/DevTools/Git/cmd/git.exe -DOUTPUT_FILE=D:/development/Project/putty-ai/build/CMakeFiles/cmake_commit.c.tmp -DOUTPUT_TYPE=header -P D:/development/Project/putty-ai/putty-src/cmake/gitcommit.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^D:\DEVELOPMENT\PROJECT\PUTTY-AI\PUTTY-SRC\CMAKELISTS.TXT
+setlocal
+"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SD:/development/Project/putty-ai/putty-src -BD:/development/Project/putty-ai/build --check-stamp-file D:/development/Project/putty-ai/build/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

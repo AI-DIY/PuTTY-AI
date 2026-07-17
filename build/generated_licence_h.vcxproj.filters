@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="D:\development\Project\putty-ai\build\CMakeFiles\401bcc21d2862417d19c1345f58ffe90\licence.h.tmp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="D:\development\Project\putty-ai\build\CMakeFiles\401bcc21d2862417d19c1345f58ffe90\generated_licence_h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="D:\development\Project\putty-ai\putty-src\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="D:\development\Project\putty-ai\build\CMakeFiles\generated_licence_h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{A77A3E89-5261-343F-9A68-740C1AD5EA78}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

@@ -1,0 +1,111 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\connection1-server.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\connection2-server.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\kex2-server.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\login1-server.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\server.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\sesschan.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\sftpserver.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\userauth2-server.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="D:\development\Project\putty-ai\putty-src\ssh\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Object Include="D:\development\Project\putty-ai\build\ssh\sftpcommon.dir\$(Configuration)\sftpcommon.obj">
+      <Filter>Object Libraries</Filter>
+    </Object>
+    <Object Include="D:\development\Project\putty-ai\build\ssh\sshcommon.dir\$(Configuration)\bpp1.obj">
+      <Filter>Object Libraries</Filter>
+    </Object>
+    <Object Include="D:\development\Project\putty-ai\build\ssh\sshcommon.dir\$(Configuration)\bpp2.obj">
+      <Filter>Object Libraries</Filter>
+    </Object>
+    <Object Include="D:\development\Project\putty-ai\build\ssh\sshcommon.dir\$(Configuration)\bpp-bare.obj">
+      <Filter>Object Libraries</Filter>
+    </Object>
+    <Object Include="D:\development\Project\putty-ai\build\ssh\sshcommon.dir\$(Configuration)\ca-config.obj">
+      <Filter>Object Libraries</Filter>
+    </Object>
+    <Object Include="D:\development\Project\putty-ai\build\ssh\sshcommon.dir\$(Configuration)\censor1.obj">
+      <Filter>Object Libraries</Filter>
+    </Object>
+    <Object Include="D:\development\Project\putty-ai\build\ssh\sshcommon.dir\$(Configuration)\censor2.obj">
+      <Filter>Object Libraries</Filter>
+    </Object>
+    <Object Include="D:\development\Project\putty-ai\build\ssh\sshcommon.dir\$(Configuration)\common.obj">
+      <Filter>Object Libraries</Filter>
+    </Object>
+    <Object Include="D:\development\Project\putty-ai\build\ssh\sshcommon.dir\$(Configuration)\connection1.obj">
+      <Filter>Object Libraries</Filter>
+    </Object>
+    <Object Include="D:\development\Project\putty-ai\build\ssh\sshcommon.dir\$(Configuration)\connection2.obj">
+      <Filter>Object Libraries</Filter>
+    </Object>
+    <Object Include="D:\development\Project\putty-ai\build\ssh\sshcommon.dir\$(Configuration)\crc-attack-detector.obj">
+      <Filter>Object Libraries</Filter>
+    </Object>
+    <Object Include="D:\development\Project\putty-ai\build\ssh\sshcommon.dir\$(Configuration)\gssc.obj">
+      <Filter>Object Libraries</Filter>
+    </Object>
+    <Object Include="D:\development\Project\putty-ai\build\ssh\sshcommon.dir\$(Configuration)\login1.obj">
+      <Filter>Object Libraries</Filter>
+    </Object>
+    <Object Include="D:\development\Project\putty-ai\build\ssh\sshcommon.dir\$(Configuration)\pgssapi.obj">
+      <Filter>Object Libraries</Filter>
+    </Object>
+    <Object Include="D:\development\Project\putty-ai\build\ssh\sshcommon.dir\$(Configuration)\portfwd.obj">
+      <Filter>Object Libraries</Filter>
+    </Object>
+    <Object Include="D:\development\Project\putty-ai\build\ssh\sshcommon.dir\$(Configuration)\sshpubk.obj">
+      <Filter>Object Libraries</Filter>
+    </Object>
+    <Object Include="D:\development\Project\putty-ai\build\ssh\sshcommon.dir\$(Configuration)\sshrand.obj">
+      <Filter>Object Libraries</Filter>
+    </Object>
+    <Object Include="D:\development\Project\putty-ai\build\ssh\sshcommon.dir\$(Configuration)\transient-hostkey-cache.obj">
+      <Filter>Object Libraries</Filter>
+    </Object>
+    <Object Include="D:\development\Project\putty-ai\build\ssh\sshcommon.dir\$(Configuration)\transport2.obj">
+      <Filter>Object Libraries</Filter>
+    </Object>
+    <Object Include="D:\development\Project\putty-ai\build\ssh\sshcommon.dir\$(Configuration)\verstring.obj">
+      <Filter>Object Libraries</Filter>
+    </Object>
+    <Object Include="D:\development\Project\putty-ai\build\ssh\sshcommon.dir\$(Configuration)\x11fwd.obj">
+      <Filter>Object Libraries</Filter>
+    </Object>
+    <Object Include="D:\development\Project\putty-ai\build\ssh\sshcommon.dir\$(Configuration)\zlib.obj">
+      <Filter>Object Libraries</Filter>
+    </Object>
+    <Object Include="D:\development\Project\putty-ai\build\ssh\sshcommon.dir\$(Configuration)\noise.obj">
+      <Filter>Object Libraries</Filter>
+    </Object>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Object Libraries">
+      <UniqueIdentifier>{2BC88A8E-FE49-3EFB-A599-3C9B2A50DA1F}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{B3109FFE-8DA4-3ECF-A871-7CC86AF31C17}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

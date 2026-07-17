@@ -1,0 +1,11 @@
+D:\development\Project\putty-ai\putty-src\ssh\agentf.c;D:\development\Project\putty-ai\build\ssh\sshclient.dir\Release\agentf.obj
+D:\development\Project\putty-ai\putty-src\ssh\connection1-client.c;D:\development\Project\putty-ai\build\ssh\sshclient.dir\Release\connection1-client.obj
+D:\development\Project\putty-ai\putty-src\ssh\connection2-client.c;D:\development\Project\putty-ai\build\ssh\sshclient.dir\Release\connection2-client.obj
+D:\development\Project\putty-ai\putty-src\ssh\kex2-client.c;D:\development\Project\putty-ai\build\ssh\sshclient.dir\Release\kex2-client.obj
+D:\development\Project\putty-ai\putty-src\ssh\mainchan.c;D:\development\Project\putty-ai\build\ssh\sshclient.dir\Release\mainchan.obj
+D:\development\Project\putty-ai\putty-src\ssh\sharing.c;D:\development\Project\putty-ai\build\ssh\sshclient.dir\Release\sharing.c.obj
+D:\development\Project\putty-ai\putty-src\ssh\ssh.c;D:\development\Project\putty-ai\build\ssh\sshclient.dir\Release\ssh.obj
+D:\development\Project\putty-ai\putty-src\ssh\userauth2-client.c;D:\development\Project\putty-ai\build\ssh\sshclient.dir\Release\userauth2-client.obj
+D:\development\Project\putty-ai\putty-src\windows\agent-client.c;D:\development\Project\putty-ai\build\ssh\sshclient.dir\Release\agent-client.obj
+D:\development\Project\putty-ai\putty-src\windows\gss.c;D:\development\Project\putty-ai\build\ssh\sshclient.dir\Release\gss.obj
+D:\development\Project\putty-ai\putty-src\windows\sharing.c;D:\development\Project\putty-ai\build\ssh\sshclient.dir\Release\__\windows\sharing.c.obj

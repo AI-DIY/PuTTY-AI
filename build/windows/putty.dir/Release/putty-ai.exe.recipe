@@ -1,0 +1,23 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <ProjectOutputs>
+    <ProjectOutput>
+      <FullPath>D:\development\Project\putty-ai\build\x64\Release\ZERO_CHECK</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>D:\development\Project\putty-ai\build\x64\Release\generated_licence_h</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>D:\development\Project\putty-ai\build\x64\Release\check_git_commit</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>D:\development\Project\putty-ai\build\x64\Release\cmake_commit_c</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>D:\development\Project\putty-ai\build\Release\putty-ai.exe</FullPath>
+    </ProjectOutput>
+  </ProjectOutputs>
+  <ContentFiles />
+  <SatelliteDlls />
+  <NonRecipeFileRefs />
+</Project>

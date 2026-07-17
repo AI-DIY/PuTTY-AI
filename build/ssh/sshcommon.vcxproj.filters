@@ -1,0 +1,79 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\bpp1.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\bpp2.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\bpp-bare.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\ca-config.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\censor1.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\censor2.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\common.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\connection1.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\connection2.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\crc-attack-detector.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\gssc.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\login1.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\pgssapi.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\portfwd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\sshpubk.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\sshrand.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\transient-hostkey-cache.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\transport2.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\verstring.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\x11fwd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\ssh\zlib.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\development\Project\putty-ai\putty-src\windows\noise.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="D:\development\Project\putty-ai\putty-src\ssh\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{B3109FFE-8DA4-3ECF-A871-7CC86AF31C17}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

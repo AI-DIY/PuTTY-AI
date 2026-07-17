@@ -1,0 +1,16 @@
+D:\development\Project\putty-ai\putty-src\errsock.c;D:\development\Project\putty-ai\build\network.dir\Release\errsock.obj
+D:\development\Project\putty-ai\putty-src\x11disp.c;D:\development\Project\putty-ai\build\network.dir\Release\x11disp.obj
+D:\development\Project\putty-ai\putty-src\proxy\proxy.c;D:\development\Project\putty-ai\build\network.dir\Release\proxy.obj
+D:\development\Project\putty-ai\putty-src\proxy\http.c;D:\development\Project\putty-ai\build\network.dir\Release\http.obj
+D:\development\Project\putty-ai\putty-src\proxy\socks4.c;D:\development\Project\putty-ai\build\network.dir\Release\socks4.obj
+D:\development\Project\putty-ai\putty-src\proxy\socks5.c;D:\development\Project\putty-ai\build\network.dir\Release\socks5.obj
+D:\development\Project\putty-ai\putty-src\proxy\telnet.c;D:\development\Project\putty-ai\build\network.dir\Release\telnet.obj
+D:\development\Project\putty-ai\putty-src\proxy\newmain.c;D:\development\Project\putty-ai\build\network.dir\Release\newmain.obj
+D:\development\Project\putty-ai\putty-src\proxy\local.c;D:\development\Project\putty-ai\build\network.dir\Release\local.obj
+D:\development\Project\putty-ai\putty-src\proxy\interactor.c;D:\development\Project\putty-ai\build\network.dir\Release\interactor.obj
+D:\development\Project\putty-ai\putty-src\windows\network.c;D:\development\Project\putty-ai\build\network.dir\Release\network.obj
+D:\development\Project\putty-ai\putty-src\windows\handle-socket.c;D:\development\Project\putty-ai\build\network.dir\Release\handle-socket.obj
+D:\development\Project\putty-ai\putty-src\windows\named-pipe-client.c;D:\development\Project\putty-ai\build\network.dir\Release\named-pipe-client.obj
+D:\development\Project\putty-ai\putty-src\windows\named-pipe-server.c;D:\development\Project\putty-ai\build\network.dir\Release\named-pipe-server.obj
+D:\development\Project\putty-ai\putty-src\windows\local-proxy.c;D:\development\Project\putty-ai\build\network.dir\Release\local-proxy.obj
+D:\development\Project\putty-ai\putty-src\windows\x11.c;D:\development\Project\putty-ai\build\network.dir\Release\x11.obj
