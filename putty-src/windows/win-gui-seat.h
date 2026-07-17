@@ -5,6 +5,7 @@
  */
 
 typedef struct WinGuiSeat WinGuiSeat;
+typedef struct AiPanel AiPanel;
 
 struct PopupMenu {
     HMENU menu;
@@ -58,6 +59,7 @@ struct WinGuiSeat {
     LogPolicy logpolicy;
 
     HWND term_hwnd;
+    AiPanel *ai_panel;
 
     int extra_width, extra_height;
     int font_width, font_height;

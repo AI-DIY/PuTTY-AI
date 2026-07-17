@@ -101,6 +101,7 @@ add_sources_from_current_dir(psocks nohelp.c)
 
 add_executable(putty
   window.c
+  ai.c
   putty.c
   help.c
   ${CMAKE_SOURCE_DIR}/stubs/no-console.c
@@ -110,8 +111,11 @@ add_dependencies(putty generated_licence_h)
 target_link_libraries(putty
   guiterminal guimisc eventloop sshclient otherbackends settings network crypto
   utils
+  winhttp
   ${platform_libraries})
-set_target_properties(putty PROPERTIES WIN32_EXECUTABLE ON)
+set_target_properties(putty PROPERTIES
+  OUTPUT_NAME "putty-ai"
+  WIN32_EXECUTABLE ON)
 installed_program(putty)
 
 add_executable(puttytel

@@ -524,6 +524,17 @@ static void test_wintitle(Mock *mk)
     SEQUAL(mk->title->s, "bar");
 }
 
+static void test_recent_text(Mock *mk)
+{
+    reset(mk);
+    term_datapl(
+        mk->term, PTRLEN_LITERAL("first\r\nsecond\r\nsecret"));
+
+    char *recent = term_get_recent_text(mk->term, 6);
+    SEQUAL(recent, "secret");
+    sfree(recent);
+}
+
 int main(void)
 {
     Mock *mk = mock_new();
@@ -533,6 +544,7 @@ int main(void)
     test_wrap(mk);
     test_nonwrap(mk);
     test_wintitle(mk);
+    test_recent_text(mk);
 
     bool failed = mk->any_test_failed;
     mock_free(mk);

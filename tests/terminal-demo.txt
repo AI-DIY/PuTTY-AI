@@ -1,0 +1,12 @@
+Welcome to PuTTY AI integration test
+
+$ systemctl status demo-service
+demo-service.service - Demo Service
+   Loaded: loaded (/etc/systemd/system/demo-service.service; enabled)
+   Active: failed (Result: exit-code)
+  Process: 421 ExecStart=/usr/local/bin/demo-service (code=exited, status=1/FAILURE)
+
+Jul 17 13:20:04 host demo-service[421]: ERROR database connection refused
+Jul 17 13:20:04 host demo-service[421]: retry exhausted after 5 attempts
+
+$

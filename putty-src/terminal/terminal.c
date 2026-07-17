@@ -6824,6 +6824,89 @@ void term_copyall(Terminal *term, const int *clipboards, int n_clipboards)
     clipme(term, top, bottom, false, true, clipboards, n_clipboards);
 }
 
+char *term_get_recent_text(Terminal *term, size_t max_chars)
+{
+    const int clip_local[] = { CLIP_LOCAL };
+    wchar_t *saved_text = term->last_selected_text;
+    int *saved_attr = term->last_selected_attr;
+    truecolour *saved_tc = term->last_selected_tc;
+    size_t saved_len = term->last_selected_len;
+    wchar_t *captured_text;
+    int *captured_attr;
+    truecolour *captured_tc;
+    size_t captured_len, start;
+    int last_line, first_line, lines_needed;
+    pos top, bottom;
+    char *result;
+
+    if (max_chars == 0)
+        return dupstr("");
+
+    /*
+     * clipme already contains the complete and well-tested conversion from
+     * PuTTY's internal character cells (including line drawing characters,
+     * DBCS, combining characters and surrogate pairs) to Unicode. Temporarily
+     * borrow its CLIP_LOCAL destination, then restore the user's previous
+     * local selection so context collection has no visible clipboard effect.
+     */
+    term->last_selected_text = NULL;
+    term->last_selected_attr = NULL;
+    term->last_selected_tc = NULL;
+    term->last_selected_len = 0;
+
+    last_line = find_last_nonempty_line(term, term->screen);
+    if (last_line < 0)
+        last_line = 0;
+    lines_needed = (int)(max_chars / (term->cols > 0 ? term->cols : 1)) + 8;
+    if (lines_needed < 8)
+        lines_needed = 8;
+    first_line = last_line - lines_needed + 1;
+    if (first_line < -sblines(term))
+        first_line = -sblines(term);
+
+    top.y = first_line;
+    top.x = 0;
+    bottom.y = last_line;
+    bottom.x = term->cols;
+    clipme(term, top, bottom, false, false, clip_local, lenof(clip_local));
+
+    captured_text = term->last_selected_text;
+    captured_attr = term->last_selected_attr;
+    captured_tc = term->last_selected_tc;
+    captured_len = term->last_selected_len;
+
+    term->last_selected_text = saved_text;
+    term->last_selected_attr = saved_attr;
+    term->last_selected_tc = saved_tc;
+    term->last_selected_len = saved_len;
+
+#if SELECTION_NUL_TERMINATED
+    if (captured_len > 0 && captured_text[captured_len - 1] == L'\0')
+        captured_len--;
+#endif
+    while (captured_len > 0 &&
+           (captured_text[captured_len - 1] == L' ' ||
+            captured_text[captured_len - 1] == L'\t' ||
+            captured_text[captured_len - 1] == L'\r' ||
+            captured_text[captured_len - 1] == L'\n'))
+        captured_len--;
+    start = captured_len > max_chars ? captured_len - max_chars : 0;
+#ifdef PLATFORM_IS_UTF16
+    if (start < captured_len && start > 0 &&
+        captured_text[start] >= 0xDC00 && captured_text[start] <= 0xDFFF &&
+        captured_text[start - 1] >= 0xD800 &&
+        captured_text[start - 1] <= 0xDBFF)
+        start++;
+#endif
+    result = dup_wc_to_mb_c(
+        CP_UTF8, captured_text + start, captured_len - start, "", NULL);
+
+    sfree(captured_text);
+    sfree(captured_attr);
+    sfree(captured_tc);
+    return result;
+}
+
 static void paste_from_clip_local(void *vterm)
 {
     Terminal *term = (Terminal *)vterm;

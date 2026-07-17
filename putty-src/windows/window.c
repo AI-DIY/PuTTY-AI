@@ -20,6 +20,7 @@
 #include "putty-rc.h"
 #include "security-api.h"
 #include "win-gui-seat.h"
+#include "ai.h"
 #include "tree234.h"
 
 #ifdef NO_MULTIMON
@@ -528,7 +529,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
 
     wgs->font_width = 10;
     wgs->font_height = 20;
-    wgs->extra_width = 25;
+    wgs->extra_width = 25 + ai_panel_default_width();
     wgs->extra_height = 28;
     guess_width = wgs->extra_width + wgs->font_width * conf_get_int(
         wgs->conf, CONF_width);
@@ -631,6 +632,10 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
               conf_get_int(wgs->conf, CONF_width),
               conf_get_int(wgs->conf, CONF_savelines));
 
+    /* The AI panel is created only after Terminal is ready, because it can
+     * capture recent terminal context and fill reviewed commands back in. */
+    wgs->ai_panel = ai_panel_create(wgs);
+
     /*
      * Correct the guesses for extra_{width,height}.
      */
@@ -641,7 +646,8 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
         wgs->offset_width = wgs->offset_height =
             conf_get_int(wgs->conf, CONF_window_border);
         wgs->extra_width =
-            wr.right - wr.left - cr.right + cr.left + wgs->offset_width*2;
+            wr.right - wr.left - cr.right + cr.left + wgs->offset_width*2 +
+            ai_panel_width(wgs->ai_panel);
         wgs->extra_height =
             wr.bottom - wr.top - cr.bottom + cr.top +wgs->offset_height*2;
     }
@@ -691,6 +697,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
         /* And set the window to the final size and position we've chosen */
         SetWindowPos(wgs->term_hwnd, NULL, x, y, guess_width, guess_height,
                     SWP_NOREDRAW | SWP_NOZORDER);
+        ai_panel_layout(wgs->ai_panel);
     }
 
     /*
@@ -795,9 +802,10 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
      * Finally show the window!
      */
     ShowWindow(wgs->term_hwnd, show);
+    ai_panel_layout(wgs->ai_panel);
     SetForegroundWindow(wgs->term_hwnd);
 
-    term_set_focus(wgs->term, GetForegroundWindow() == wgs->term_hwnd);
+    term_set_focus(wgs->term, GetFocus() == wgs->term_hwnd);
     UpdateWindow(wgs->term_hwnd);
 
     gui_terminal_ready(wgs->term_hwnd, &wgs->seat, wgs->backend);
@@ -829,7 +837,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
         } else {
             timeout = INFINITE;
             /* The messages seem unreliable; especially if we're being tricky */
-            term_set_focus(wgs->term, GetForegroundWindow() == wgs->term_hwnd);
+            term_set_focus(wgs->term, GetFocus() == wgs->term_hwnd);
         }
 
         HandleWaitList *hwl = get_handle_wait_list();
@@ -846,8 +854,18 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
                 goto finished;         /* two-level break */
 
             HWND logbox = event_log_window();
-            if (!(IsWindow(logbox) && IsDialogMessage(logbox, &msg)))
+            if (!(IsWindow(logbox) && IsDialogMessage(logbox, &msg))) {
+                /*
+                 * Terminal keystrokes are translated explicitly in WndProc,
+                 * so the traditional PuTTY message loop does not call
+                 * TranslateMessage. Standard child controls such as the AI
+                 * panel's edit boxes still require WM_CHAR messages.
+                 */
+                if (msg.hwnd != wgs->term_hwnd &&
+                    IsChild(wgs->term_hwnd, msg.hwnd))
+                    TranslateMessage(&msg);
                 sw_DispatchMessage(&msg);
+            }
 
             /*
              * WM_NETEVENT messages seem to jump ahead of others in
@@ -882,6 +900,8 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
 
 static void wgs_cleanup(WinGuiSeat *wgs)
 {
+    ai_panel_destroy(wgs->ai_panel);
+    wgs->ai_panel = NULL;
     deinit_fonts(wgs);
     sfree(wgs->logpal);
     if (wgs->pal)
@@ -1765,8 +1785,11 @@ static void recompute_window_offset(WinGuiSeat *wgs)
     RECT cr;
     GetClientRect(wgs->term_hwnd, &cr);
 
-    int win_width  = cr.right - cr.left;
+    int win_width  = cr.right - cr.left - ai_panel_width(wgs->ai_panel);
     int win_height = cr.bottom - cr.top;
+
+    if (win_width < 1)
+        win_width = 1;
 
     int new_offset_width = (win_width-wgs->font_width*wgs->term->cols)/2;
     int new_offset_height = (win_height-wgs->font_height*wgs->term->rows)/2;
@@ -1795,7 +1818,7 @@ static void reset_window(WinGuiSeat *wgs, int reinit)
     GetWindowRect(wgs->term_hwnd, &wr);
     GetClientRect(wgs->term_hwnd, &cr);
 
-    win_width  = cr.right - cr.left;
+    win_width  = cr.right - cr.left - ai_panel_width(wgs->ai_panel);
     win_height = cr.bottom - cr.top;
 
     resize_action = conf_get_int(wgs->conf, CONF_resize_action);
@@ -1813,6 +1836,8 @@ static void reset_window(WinGuiSeat *wgs, int reinit)
     /* Oh, looks like we're minimised */
     if (win_width == 0 || win_height == 0)
         return;
+    if (win_width < 1)
+        win_width = 1;
 
     /* Is the window out of position ? */
     if (!reinit) {
@@ -1824,7 +1849,9 @@ static void reset_window(WinGuiSeat *wgs, int reinit)
          * the window so it's the font size or the terminal itself.
          */
 
-        wgs->extra_width = wr.right - wr.left - cr.right + cr.left;
+        wgs->extra_width =
+            wr.right - wr.left - cr.right + cr.left +
+            ai_panel_width(wgs->ai_panel);
         wgs->extra_height = wr.bottom - wr.top - cr.bottom + cr.top;
 
         if (resize_action != RESIZE_TERM) {
@@ -1868,7 +1895,8 @@ static void reset_window(WinGuiSeat *wgs, int reinit)
     if (reinit == 3 && p_GetSystemMetricsForDpi && p_AdjustWindowRectExForDpi) {
         RECT rect;
         rect.left = rect.top = 0;
-        rect.right = (wgs->font_width * wgs->term->cols);
+        rect.right = (wgs->font_width * wgs->term->cols) +
+            ai_panel_width(wgs->ai_panel);
         if (conf_get_bool(wgs->conf, CONF_scrollbar))
             rect.right += p_GetSystemMetricsForDpi(SM_CXVSCROLL,
                                                    wgs->dpi_info.cur_dpi.x);
@@ -1902,7 +1930,8 @@ static void reset_window(WinGuiSeat *wgs, int reinit)
     if (reinit>0) {
         wgs->offset_width = wgs->offset_height = window_border;
         wgs->extra_width =
-            wr.right - wr.left - cr.right + cr.left + wgs->offset_width*2;
+            wr.right - wr.left - cr.right + cr.left + wgs->offset_width*2 +
+            ai_panel_width(wgs->ai_panel);
         wgs->extra_height =
             wr.bottom - wr.top - cr.bottom + cr.top + wgs->offset_height*2;
 
@@ -1934,7 +1963,8 @@ static void reset_window(WinGuiSeat *wgs, int reinit)
         reinit>0) {
         wgs->offset_width = wgs->offset_height = window_border;
         wgs->extra_width =
-            wr.right - wr.left - cr.right + cr.left + wgs->offset_width*2;
+            wr.right - wr.left - cr.right + cr.left + wgs->offset_width*2 +
+            ai_panel_width(wgs->ai_panel);
         wgs->extra_height =
             wr.bottom - wr.top - cr.bottom + cr.top + wgs->offset_height*2;
 
@@ -2001,7 +2031,8 @@ static void reset_window(WinGuiSeat *wgs, int reinit)
         wgs->offset_height = (win_height-wgs->font_height*wgs->term->rows)/2;
 
         wgs->extra_width =
-            wr.right - wr.left - cr.right + cr.left + wgs->offset_width*2;
+            wr.right - wr.left - cr.right + cr.left + wgs->offset_width*2 +
+            ai_panel_width(wgs->ai_panel);
         wgs->extra_height =
             wr.bottom - wr.top - cr.bottom + cr.top + wgs->offset_height*2;
 
@@ -2165,9 +2196,12 @@ static void free_hdc(WinGuiSeat *wgs, HDC hdc)
 
 static void wm_size_resize_term(WinGuiSeat *wgs, LPARAM lParam)
 {
-    int width = LOWORD(lParam);
+    int width = LOWORD(lParam) - ai_panel_width(wgs->ai_panel);
     int height = HIWORD(lParam);
     int border_size = conf_get_int(wgs->conf, CONF_window_border);
+
+    if (width < 1)
+        width = 1;
 
     int w = (width - border_size*2) / wgs->font_width;
     int h = (height - border_size*2) / wgs->font_height;
@@ -2200,6 +2234,11 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message,
     HDC hdc;
     int resize_action;
     WinGuiSeat *wgs = (WinGuiSeat *)GetWindowLongPtr(hwnd, GWLP_USERDATA);
+    LRESULT ai_result;
+
+    if (wgs && ai_panel_handle_message(
+                   wgs->ai_panel, message, wParam, lParam, &ai_result))
+        return ai_result;
 
     switch (message) {
       case WM_CREATE:
@@ -2241,6 +2280,10 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message,
         break;
       case WM_COMMAND:
       case WM_SYSCOMMAND:
+        if (message == WM_COMMAND && wgs &&
+            ai_panel_handle_command(
+                wgs->ai_panel, LOWORD(wParam), HIWORD(wParam), (HWND)lParam))
+            return 0;
         switch (wParam & ~0xF) {       /* low 4 bits reserved to Windows */
           case SC_VSCROLL:
           case SC_HSCROLL:
@@ -3019,6 +3062,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message,
         sys_cursor_update(wgs);
         break;
       case WM_SIZE:
+        ai_panel_layout(wgs->ai_panel);
         resize_action = conf_get_int(wgs->conf, CONF_resize_action);
         term_notify_minimised(wgs->term, wParam == SIZE_MINIMIZED);
         {
@@ -3028,9 +3072,14 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message,
              * terminal the size of the overall window.
              */
             RECT r;
+            int pixel_width;
             GetWindowRect(hwnd, &r);
+            pixel_width =
+                r.right - r.left - ai_panel_width(wgs->ai_panel);
+            if (pixel_width < 1)
+                pixel_width = 1;
             term_notify_window_size_pixels(
-                wgs->term, r.right - r.left, r.bottom - r.top);
+                wgs->term, pixel_width, r.bottom - r.top);
         }
         if (wParam == SIZE_MINIMIZED)
             sw_SetWindowText(hwnd,
@@ -5944,7 +5993,9 @@ static bool win_seat_get_window_pixel_size(Seat *seat, int *x, int *y)
     WinGuiSeat *wgs = container_of(seat, WinGuiSeat, seat);
     RECT r;
     GetWindowRect(wgs->term_hwnd, &r);
-    *x = r.right - r.left;
+    *x = r.right - r.left - ai_panel_width(wgs->ai_panel);
+    if (*x < 1)
+        *x = 1;
     *y = r.bottom - r.top;
     return true;
 }
