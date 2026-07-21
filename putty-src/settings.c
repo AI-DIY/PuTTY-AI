@@ -699,7 +699,8 @@ bool load_settings(const char *section, Conf *conf)
     load_open_settings(sesskey, conf);
     close_settings_r(sesskey);
 
-    if (exists && conf_launchable(conf))
+    if (exists && conf_launchable(conf) &&
+        !(section && !strncmp(section, "tmp:", 4)))
         add_session_to_jumplist(section);
 
     return exists;

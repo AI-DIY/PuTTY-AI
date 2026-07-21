@@ -61,25 +61,25 @@
     <_ProjectFileVersion>10.0.20506.1</_ProjectFileVersion>
     <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">D:\development\Project\putty-ai\build\Debug\</OutDir>
     <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">putty.dir\Debug\</IntDir>
-    <TargetName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">putty-ai</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">putty</TargetName>
     <TargetExt Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">.exe</TargetExt>
     <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</LinkIncremental>
     <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateManifest>
     <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">D:\development\Project\putty-ai\build\Release\</OutDir>
     <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">putty.dir\Release\</IntDir>
-    <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">putty-ai</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">putty</TargetName>
     <TargetExt Condition="'$(Configuration)|$(Platform)'=='Release|x64'">.exe</TargetExt>
     <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkIncremental>
     <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</GenerateManifest>
     <OutDir Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">D:\development\Project\putty-ai\build\MinSizeRel\</OutDir>
     <IntDir Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">putty.dir\MinSizeRel\</IntDir>
-    <TargetName Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">putty-ai</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">putty</TargetName>
     <TargetExt Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">.exe</TargetExt>
     <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</LinkIncremental>
     <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">true</GenerateManifest>
     <OutDir Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">D:\development\Project\putty-ai\build\RelWithDebInfo\</OutDir>
     <IntDir Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">putty.dir\RelWithDebInfo\</IntDir>
-    <TargetName Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">putty-ai</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">putty</TargetName>
     <TargetExt Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">.exe</TargetExt>
     <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">true</LinkIncremental>
     <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">true</GenerateManifest>
@@ -87,6 +87,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <AdditionalIncludeDirectories>D:\development\Project\putty-ai\putty-src;D:\development\Project\putty-ai\build\CMakeFiles;D:\development\Project\putty-ai\putty-src\windows;D:\development\Project\putty-ai\putty-src\terminal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /utf-8</AdditionalOptions>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
@@ -124,8 +125,8 @@
       <AdditionalOptions>%(AdditionalOptions) /machine:x64 /manifest:no</AdditionalOptions>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
-      <ImportLibrary>D:/development/Project/putty-ai/build/windows/Debug/putty-ai.lib</ImportLibrary>
-      <ProgramDataBaseFile>D:/development/Project/putty-ai/build/Debug/putty-ai.pdb</ProgramDataBaseFile>
+      <ImportLibrary>D:/development/Project/putty-ai/build/windows/Debug/putty.lib</ImportLibrary>
+      <ProgramDataBaseFile>D:/development/Project/putty-ai/build/Debug/putty.pdb</ProgramDataBaseFile>
       <SubSystem>Windows</SubSystem>
     </Link>
     <ProjectReference>
@@ -135,6 +136,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <AdditionalIncludeDirectories>D:\development\Project\putty-ai\putty-src;D:\development\Project\putty-ai\build\CMakeFiles;D:\development\Project\putty-ai\putty-src\windows;D:\development\Project\putty-ai\putty-src\terminal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /utf-8</AdditionalOptions>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <DisableSpecificWarnings>4244;4267;4018;4146;4293;4090</DisableSpecificWarnings>
@@ -173,8 +175,8 @@
       <AdditionalOptions>%(AdditionalOptions) /machine:x64 /manifest:no</AdditionalOptions>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
-      <ImportLibrary>D:/development/Project/putty-ai/build/windows/Release/putty-ai.lib</ImportLibrary>
-      <ProgramDataBaseFile>D:/development/Project/putty-ai/build/Release/putty-ai.pdb</ProgramDataBaseFile>
+      <ImportLibrary>D:/development/Project/putty-ai/build/windows/Release/putty.lib</ImportLibrary>
+      <ProgramDataBaseFile>D:/development/Project/putty-ai/build/Release/putty.pdb</ProgramDataBaseFile>
       <SubSystem>Windows</SubSystem>
     </Link>
     <ProjectReference>
@@ -184,6 +186,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">
     <ClCompile>
       <AdditionalIncludeDirectories>D:\development\Project\putty-ai\putty-src;D:\development\Project\putty-ai\build\CMakeFiles;D:\development\Project\putty-ai\putty-src\windows;D:\development\Project\putty-ai\putty-src\terminal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /utf-8</AdditionalOptions>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <DisableSpecificWarnings>4244;4267;4018;4146;4293;4090</DisableSpecificWarnings>
@@ -222,8 +225,8 @@
       <AdditionalOptions>%(AdditionalOptions) /machine:x64 /manifest:no</AdditionalOptions>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
-      <ImportLibrary>D:/development/Project/putty-ai/build/windows/MinSizeRel/putty-ai.lib</ImportLibrary>
-      <ProgramDataBaseFile>D:/development/Project/putty-ai/build/MinSizeRel/putty-ai.pdb</ProgramDataBaseFile>
+      <ImportLibrary>D:/development/Project/putty-ai/build/windows/MinSizeRel/putty.lib</ImportLibrary>
+      <ProgramDataBaseFile>D:/development/Project/putty-ai/build/MinSizeRel/putty.pdb</ProgramDataBaseFile>
       <SubSystem>Windows</SubSystem>
     </Link>
     <ProjectReference>
@@ -233,6 +236,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">
     <ClCompile>
       <AdditionalIncludeDirectories>D:\development\Project\putty-ai\putty-src;D:\development\Project\putty-ai\build\CMakeFiles;D:\development\Project\putty-ai\putty-src\windows;D:\development\Project\putty-ai\putty-src\terminal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /utf-8</AdditionalOptions>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
@@ -270,8 +274,8 @@
       <AdditionalOptions>%(AdditionalOptions) /machine:x64 /manifest:no</AdditionalOptions>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
-      <ImportLibrary>D:/development/Project/putty-ai/build/windows/RelWithDebInfo/putty-ai.lib</ImportLibrary>
-      <ProgramDataBaseFile>D:/development/Project/putty-ai/build/RelWithDebInfo/putty-ai.pdb</ProgramDataBaseFile>
+      <ImportLibrary>D:/development/Project/putty-ai/build/windows/RelWithDebInfo/putty.lib</ImportLibrary>
+      <ProgramDataBaseFile>D:/development/Project/putty-ai/build/RelWithDebInfo/putty.pdb</ProgramDataBaseFile>
       <SubSystem>Windows</SubSystem>
     </Link>
     <ProjectReference>

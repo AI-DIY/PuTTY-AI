@@ -171,12 +171,17 @@ static bool cmdline_check_unavailable(int flag, const char *p)
 
 static bool seen_hostname_argument = false;
 static bool seen_port_argument = false;
+static bool seen_port_option = false;
 static bool seen_verbose_option = false;
 static bool loaded_session = false;
 bool cmdline_verbose(void) { return seen_verbose_option; }
 bool cmdline_seat_verbose(Seat *seat) { return cmdline_verbose(); }
 bool cmdline_lp_verbose(LogPolicy *lp) { return cmdline_verbose(); }
 bool cmdline_loaded_session(void) { return loaded_session; }
+bool cmdline_port_argument(void)
+{
+    return seen_port_argument || seen_port_option;
+}
 
 static void set_protocol(Conf *conf, int protocol)
 {
@@ -603,6 +608,7 @@ int cmdline_process_param(CmdlineArg *arg, CmdlineArg *nextarg,
     if (!strcmp(p, "-P")) {
         RETURN(2);
         UNAVAILABLE_IN(TOOLTYPE_NONNETWORK);
+        seen_port_option = true;
         SAVEABLE(1);            /* lower priority than -ssh, -telnet, etc */
         conf_set_int(conf, CONF_port, atoi(value));
     }

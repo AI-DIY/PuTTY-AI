@@ -1044,9 +1044,90 @@ void test_conf_key_info(void)
     }
 }
 
+static void test_prepare_session_host_whitespace(void)
+{
+    static const struct {
+        const char *input, *expected;
+    } tests[] = {
+        { " \t\r\n47.94.23.233\r\n", "47.94.23.233" },
+        { "server.\r\nexample.com", "server.example.com" },
+        { "\v[2001:db8::1]\f", "[2001:db8::1]" },
+    };
+
+    for (size_t i = 0; i < lenof(tests); i++) {
+        Conf *conf = conf_new();
+        do_defaults(NULL, conf);
+        conf_set_str(conf, CONF_host, tests[i].input);
+
+        prepare_session(conf);
+
+        const char *actual = conf_get_str(conf, CONF_host);
+        if (strcmp(actual, tests[i].expected)) {
+            fprintf(stderr,
+                    "prepare_session host whitespace test %zu: got '%s', "
+                    "expected '%s'\n", i, actual, tests[i].expected);
+            nfails++;
+        }
+
+        conf_free(conf);
+    }
+}
+
+static void test_utf8_conversion_after_terminal_initialisation(void)
+{
+    Conf *conf = conf_new();
+    struct unicode_data ucsdata;
+    char *actual;
+    static const char expected[] = "\xE5\x88\x86\xE6\x9E\x90";
+
+    memset(&ucsdata, 0, sizeof(ucsdata));
+    do_defaults(NULL, conf);
+    conf_set_str(conf, CONF_line_codepage, "UTF-8");
+    init_ucs(conf, &ucsdata);
+
+    actual = dup_wc_to_mb(CP_UTF8, L"\x5206\x6790", "");
+    if (strcmp(actual, expected)) {
+        fprintf(stderr,
+                "UTF-8 conversion after terminal initialisation: got '%s', "
+                "expected six UTF-8 bytes\n", actual);
+        nfails++;
+    }
+
+    sfree(actual);
+    conf_free(conf);
+}
+
+static void test_network_keepalive_defaults(void)
+{
+    Conf *conf = conf_new();
+    do_defaults(NULL, conf);
+    conf_set_int(conf, CONF_protocol, PROT_RAW);
+    conf_set_int(conf, CONF_ping_interval, 0);
+    conf_set_bool(conf, CONF_tcp_keepalives, false);
+
+    prepare_session(conf);
+
+    if (conf_get_int(conf, CONF_ping_interval) != 30 ||
+        !conf_get_bool(conf, CONF_tcp_keepalives)) {
+        fprintf(stderr, "network keepalive defaults were not enabled\n");
+        nfails++;
+    }
+
+    conf_set_int(conf, CONF_ping_interval, 120);
+    prepare_session(conf);
+    if (conf_get_int(conf, CONF_ping_interval) != 30) {
+        fprintf(stderr, "network keepalive interval was not capped\n");
+        nfails++;
+    }
+    conf_free(conf);
+}
+
 int main(void)
 {
     test_conf_key_info();
     test_simple();
+    test_prepare_session_host_whitespace();
+    test_utf8_conversion_after_terminal_initialisation();
+    test_network_keepalive_defaults();
     return nfails != 0;
 }

@@ -2750,6 +2750,11 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message,
             }
 
             if (press) {
+                /* Child controls in the AI panel keep keyboard focus after
+                 * use. A click in the terminal client area must explicitly
+                 * return focus to this window before terminal interaction. */
+                if (GetFocus() != hwnd)
+                    SetFocus(hwnd);
                 click(wgs, button,
                       TO_CHR_X(X_POS(lParam)), TO_CHR_Y(Y_POS(lParam)),
                       wParam & MK_SHIFT, wParam & MK_CONTROL,

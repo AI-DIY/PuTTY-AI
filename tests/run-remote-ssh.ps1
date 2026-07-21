@@ -8,7 +8,7 @@ param(
 $ErrorActionPreference = "Stop"
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 if (-not $ExePath) {
-    $ExePath = Join-Path $root "build\Release\putty-ai.exe"
+    $ExePath = Join-Path $root "build\Release\putty.exe"
 }
 $ExePath = [IO.Path]::GetFullPath($ExePath)
 
@@ -69,9 +69,10 @@ function Get-ChildText([IntPtr]$Parent) {
     return ($texts -join "`n")
 }
 
-$putty = Start-Process -FilePath $ExePath -PassThru -ArgumentList @(
+$puttyArguments = @(
     "-ssh", "$UserName@$HostName", "-P", "$Port", "-noagent", "-noshare"
 )
+$putty = Start-Process -FilePath $ExePath -PassThru -ArgumentList $puttyArguments
 $hostKeyObserved = $false
 $hostKeyText = ""
 $resultText = ""
@@ -121,7 +122,8 @@ try {
         throw "No SSH host-key or authentication result was observed"
     }
     if ($resultText -and
-        $resultText -notmatch "authentication|publickey|remote host|connection") {
+        $resultText -notmatch
+            "authentication|publickey|remote host|connection|host.?key") {
         throw "Unexpected SSH result: $resultText"
     }
 

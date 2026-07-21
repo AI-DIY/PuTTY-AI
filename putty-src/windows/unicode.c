@@ -512,6 +512,11 @@ static reverse_mapping *make_reverse_mapping_inner(
 
 static void make_reverse_mapping(int codepage, const wchar_t *mapping)
 {
+    /* UTF-8 is variable-length and cannot be represented by this 256-entry
+     * single-byte reverse table. Creating one would silently drop every
+     * non-ASCII character in later WideCharToMultiByte-style conversions. */
+    if (codepage == CP_UTF8)
+        return;
     if (get_existing_reverse_mapping(codepage))
         return;                        /* we've already got this one */
     make_reverse_mapping_inner(codepage, mapping);
@@ -524,6 +529,9 @@ static reverse_mapping *get_reverse_mapping(int codepage)
      * internally via a translation table, by hastily making it if it doesn't
      * already exist.
      */
+
+    if (codepage == CP_UTF8)
+        return NULL;
 
     reverse_mapping *rmap = get_existing_reverse_mapping(codepage);
     if (rmap)

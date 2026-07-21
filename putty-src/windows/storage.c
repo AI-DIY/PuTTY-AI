@@ -74,12 +74,112 @@ void close_settings_w(settings_w *handle)
     sfree(handle);
 }
 
+struct file_setting {
+    char *key, *value;
+};
+
+static int file_setting_cmp(void *av, void *bv)
+{
+    const struct file_setting *a = (const struct file_setting *)av;
+    const struct file_setting *b = (const struct file_setting *)bv;
+    return strcmp(a->key, b->key);
+}
+
 struct settings_r {
     HKEY sesskey;
+    tree234 *file_settings;
 };
+
+static void free_file_settings(tree234 *settings)
+{
+    struct file_setting *setting;
+
+    if (!settings)
+        return;
+
+    while ((setting = index234(settings, 0)) != NULL) {
+        del234(settings, setting);
+        sfree(setting->key);
+        sfree(setting->value);
+        sfree(setting);
+    }
+    freetree234(settings);
+}
+
+static settings_r *open_accessclient_settings_file(const char *filename)
+{
+    const size_t max_file_size = 1024 * 1024;
+    wchar_t *wide_filename = dup_mb_to_wc(CP_ACP, filename);
+    FILE *fp = _wfopen(wide_filename, L"rb");
+    settings_r *handle;
+    size_t total_size = 0;
+    bool first_line = true;
+    char *line;
+
+    sfree(wide_filename);
+    if (!fp)
+        return NULL;
+
+    handle = snew(settings_r);
+    handle->sesskey = NULL;
+    handle->file_settings = newtree234(file_setting_cmp);
+
+    while ((line = fgetline(fp)) != NULL) {
+        struct file_setting *setting, *old_setting;
+        char *separator, *value_acp;
+        wchar_t *value_wide;
+        size_t line_size = strlen(line);
+
+        total_size += line_size;
+        if (total_size > max_file_size) {
+            sfree(line);
+            fclose(fp);
+            free_file_settings(handle->file_settings);
+            sfree(handle);
+            return NULL;
+        }
+
+        line[strcspn(line, "\r\n")] = '\0';
+        if (first_line && line_size >= 3 &&
+            !memcmp(line, "\xEF\xBB\xBF", 3))
+            memmove(line, line + 3, strlen(line + 3) + 1);
+        first_line = false;
+
+        separator = strchr(line, '=');
+        if (!separator || separator == line) {
+            sfree(line);
+            continue;
+        }
+        *separator++ = '\0';
+
+        value_wide = dup_mb_to_wc(CP_UTF8, separator);
+        value_acp = dup_wc_to_mb(CP_ACP, value_wide, "?");
+        sfree(value_wide);
+
+        setting = snew(struct file_setting);
+        setting->key = dupstr(line);
+        setting->value = value_acp;
+        old_setting = add234(handle->file_settings, setting);
+        if (old_setting != setting) {
+            del234(handle->file_settings, old_setting);
+            sfree(old_setting->key);
+            sfree(old_setting->value);
+            sfree(old_setting);
+            add234(handle->file_settings, setting);
+        }
+
+        sfree(line);
+    }
+
+    fclose(fp);
+    return handle;
+}
 
 settings_r *open_settings_r(const char *sessionname)
 {
+    if (sessionname && !strncmp(sessionname, "tmp:", 4) && sessionname[4])
+        return open_accessclient_settings_file(sessionname + 4);
+
     if (!sessionname || !*sessionname)
         sessionname = "Default Settings";
 
@@ -93,23 +193,45 @@ settings_r *open_settings_r(const char *sessionname)
 
     settings_r *handle = snew(settings_r);
     handle->sesskey = sesskey;
+    handle->file_settings = NULL;
     return handle;
 }
 
 char *read_setting_s(settings_r *handle, const char *key)
 {
+    struct file_setting lookup, *setting;
+
     if (!handle)
         return NULL;
+
+    if (handle->file_settings) {
+        lookup.key = (char *)key;
+        lookup.value = NULL;
+        setting = find234(handle->file_settings, &lookup, NULL);
+        return setting ? dupstr(setting->value) : NULL;
+    }
+
     return get_reg_sz(handle->sesskey, key);
 }
 
 int read_setting_i(settings_r *handle, const char *key, int defvalue)
 {
+    struct file_setting lookup, *setting;
     DWORD val;
-    if (!handle || !get_reg_dword(handle->sesskey, key, &val))
+
+    if (!handle)
         return defvalue;
-    else
-        return val;
+
+    if (handle->file_settings) {
+        lookup.key = (char *)key;
+        lookup.value = NULL;
+        setting = find234(handle->file_settings, &lookup, NULL);
+        return setting ? atoi(setting->value) : defvalue;
+    }
+
+    if (!get_reg_dword(handle->sesskey, key, &val))
+        return defvalue;
+    return val;
 }
 
 FontSpec *read_setting_fontspec(settings_r *handle, const char *name)
@@ -205,7 +327,10 @@ void write_setting_filename(settings_w *handle,
 void close_settings_r(settings_r *handle)
 {
     if (handle) {
-        close_regkey(handle->sesskey);
+        if (handle->file_settings)
+            free_file_settings(handle->file_settings);
+        else
+            close_regkey(handle->sesskey);
         sfree(handle);
     }
 }

@@ -108,13 +108,16 @@ add_executable(putty
   putty.rc)
 be_list(putty PuTTY SSH SERIAL OTHERBACKENDS)
 add_dependencies(putty generated_licence_h)
+if(CMAKE_C_COMPILER_ID MATCHES "MSVC" OR
+   CMAKE_C_COMPILER_FRONTEND_VARIANT MATCHES "MSVC")
+  target_compile_options(putty PRIVATE /utf-8)
+endif()
 target_link_libraries(putty
   guiterminal guimisc eventloop sshclient otherbackends settings network crypto
   utils
   winhttp
   ${platform_libraries})
 set_target_properties(putty PROPERTIES
-  OUTPUT_NAME "putty-ai"
   WIN32_EXECUTABLE ON)
 installed_program(putty)
 

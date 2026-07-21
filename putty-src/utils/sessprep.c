@@ -12,9 +12,12 @@ void prepare_session(Conf *conf)
     char *p, *q;
 
     /*
-     * Trim leading whitespace from the hostname.
+     * Trim leading whitespace from the hostname. In particular, pasted
+     * host names can contain CR/LF characters that a single-line edit box
+     * does not visibly distinguish from an otherwise valid address.
      */
-    host += strspn(host, " \t");
+    while (*host && isspace((unsigned char)*host))
+        host++;
 
     /*
      * See if host is of the form user@host, and separate out the
@@ -68,12 +71,14 @@ void prepare_session(Conf *conf)
     }
 
     /*
-     * Remove any remaining whitespace.
+     * Remove any remaining ASCII whitespace. Previously this only removed
+     * spaces and tabs, so a pasted address ending in CR/LF was displayed as
+     * a valid host but failed in getaddrinfo with WSAHOST_NOT_FOUND.
      */
     p = hostbuf;
     q = host;
     while (*q) {
-        if (*q != ' ' && *q != '\t')
+        if (!isspace((unsigned char)*q))
             *p++ = *q;
         q++;
     }
@@ -81,4 +86,14 @@ void prepare_session(Conf *conf)
 
     conf_set_str(conf, CONF_host, hostbuf);
     sfree(hostbuf);
+
+    /* Keep interactive network sessions alive across idle relay timeouts.
+     * A non-zero SSH/Telnet keepalive is harmless for active sessions, while
+     * TCP keepalive also covers Raw connections used by bastion clients. */
+    if (conf_get_int(conf, CONF_protocol) != PROT_SERIAL) {
+        if (conf_get_int(conf, CONF_ping_interval) <= 0 ||
+            conf_get_int(conf, CONF_ping_interval) > 30)
+            conf_set_int(conf, CONF_ping_interval, 30);
+        conf_set_bool(conf, CONF_tcp_keepalives, true);
+    }
 }

@@ -60,7 +60,7 @@ The project is primarily intended for development engineers, operations engineer
 
 ## Building from Source
 
-The Windows `putty` target in this repository produces `putty-ai.exe` with a native AI sidebar. The implementation uses only Windows-provided WinHTTP and Rich Edit and does not require additional runtimes or browser components.
+The Windows `putty` target in this repository produces `putty.exe` with a native AI sidebar, ready to configure as the AccessClient executable. The implementation uses only Windows-provided WinHTTP and Rich Edit and does not require additional runtimes or browser components.
 
 ### Requirements
 
@@ -78,7 +78,7 @@ cmake --build build --config Release --target putty
 After the build completes, the executable is usually located at:
 
 ```text
-build\Release\putty-ai.exe
+build\Release\putty.exe
 ```
 
 The repository also provides a build script that automatically locates Visual Studio 2022 Build Tools:
@@ -87,36 +87,63 @@ The repository also provides a build script that automatically locates Visual St
 scripts\build-windows.cmd
 ```
 
+## Bastion Compatibility and Connection Keepalive
+
+- AccessClient can launch connections through `@session-name`, `-load session-name`, `-load tmp:temporary-config-file`, or `-raw -P local-port`. A `tmp:` file is read as UTF-8 `key=value` data and supports PuTTY fields such as HostName, PortNumber, UserName, WinTitle, terminal dimensions, and encoding; AccessClient-private fields such as `mode` and `websid` are safely ignored. If a Raw session contains a valid local relay port but no host, PuTTY AI fills in `127.0.0.1` and connects directly instead of opening Configuration.
+- Network sessions cap the application keepalive interval at 30 seconds (using 30 seconds when unset or configured longer) and enable Windows TCP keepalive. The first TCP probe is sent after 30 seconds and later probes use a 10-second interval, preventing idle cleanup by bastions, NAT gateways, and firewalls.
+- Keepalives prevent idle timeouts. A real network outage or a remote SSH transport shutdown cannot resume the existing session and still requires reconnection.
+
+### AccessClient Launch Diagnostics
+
+This diagnostic build appends the caller and complete original command line before argument processing to:
+
+```text
+%LOCALAPPDATA%\PuTTY AI\accessclient-launch.log
+```
+
+The UTF-8 JSON Lines file contains the parent process PID/path, actual `putty.exe` path, working directory, complete `GetCommandLineW()` value, and WinMain arguments. View the latest launch with:
+
+```powershell
+Get-Content "$env:LOCALAPPDATA\PuTTY AI\accessclient-launch.log" |
+  Select-Object -Last 1 | ConvertFrom-Json | Format-List
+```
+
+This diagnostic log is intentionally unredacted and may contain `-pw`, usernames, hosts, and other sensitive arguments. Delete it after diagnosis and disable this temporary tracing before a production release.
+
 ## Using the AI Panel
 
 After establishing an SSH session, the PuTTY AI panel appears on the right:
 
-1. Click **Settings** and enter an OpenAI Chat Completions-compatible endpoint, model name, and API key.
-2. The API key is kept only in the current process and is never written to the registry. The endpoint, model, context length, and knowledge-file path are saved in the current user's configuration.
-3. Enter a question and choose whether to attach recent terminal context. The default maximum is 12,000 characters; the configurable range is 1,000 to 64,000.
-4. Before context and optional knowledge files are sent, the client makes a best-effort attempt to redact passwords, tokens, authorization headers, and private keys.
-5. Markdown headings, lists, and code blocks in replies are rendered in the conversation area. When a command is detected, click **Fill command**; the program only fills the command into the terminal and does not press Enter automatically.
-6. High-risk commands such as deleting files, formatting disks, stopping services, or changing permissions require two confirmations.
+1. Click **设置** and enter an OpenAI Chat Completions-compatible endpoint, model name, and API key.
+2. After clicking **永久保存**, the endpoint, model, API key, and context length are persisted in the current user's registry and restored as editable values in the next session.
+3. Terminal context is disabled by default. Select **附带已脱敏的终端上下文** only when it is needed. The default maximum is 12,000 characters; the configurable range is 1,000 to 64,000.
+4. Model requests use streaming responses, so the first content chunk appears immediately. Markdown is formatted once the response completes.
+5. Before terminal context is sent, the client makes a best-effort attempt to redact passwords, tokens, authorization headers, and private keys.
+6. The current window supports multi-turn conversations. Later questions include previous successful questions and answers. The system asks the model to reply in Simplified Chinese by default, but permits analysis and plain-text conclusions without requiring a command in every answer.
+7. Markdown headings, lists, and code blocks in replies are rendered in the conversation area. When a command is detected, click **填入命令**; the program only fills the command into the terminal and does not press Enter automatically.
+8. Clicking the terminal after using the right-side chat restores keyboard interaction. High-risk commands such as deleting files, formatting disks, stopping services, or changing permissions require two confirmations.
+
+The panel uses a 480-pixel normal width and shrinks responsively in narrow windows while retaining an interactive terminal area.
 
 You can also provide session defaults through environment variables:
 
 ```powershell
 $env:OPENAI_BASE_URL = "https://example.com/v1"
 $env:OPENAI_MODEL = "your-model"
-$env:OPENAI_API_KEY = "your-session-only-key"
+$env:OPENAI_API_KEY = "your-api-key"
 ```
 
-`OPENAI_BASE_URL` can be a service root URL or a complete `/chat/completions` URL. An API key supplied through environment variables is also not persisted.
+`OPENAI_BASE_URL` can be a service root URL or a complete `/chat/completions` URL. Environment variables are defaults only when no saved value exists; clicking **永久保存** or sending a request persists the current settings.
 
-### Local Knowledge and Auditing
+### Auditing
 
-- Settings can select one UTF-8 or UTF-16 `.md` or `.txt` file no larger than 256 KiB as local knowledge. Its contents go through the same sensitive-field redaction before being sent.
 - By default, the program records metadata-only audit logs that exclude questions, replies, context, command bodies, and API keys. The log is stored at `%LOCALAPPDATA%\PuTTY AI\audit.log` and contains only information such as timestamps, event types, the model endpoint host, and risk levels.
 
 ## Testing and Verification
 
 ```powershell
-# PuTTY terminal and line-edit regression tests
+# Configuration, IPv4 cleanup, keepalive, terminal, and line-edit tests
+build\Release\test_conf.exe
 build\Release\test_terminal.exe
 build\Release\test_lineedit.exe
 
@@ -128,11 +155,15 @@ powershell -ExecutionPolicy Bypass -File tests\run-integration.ps1 -Dangerous
 
 # Public SSH service handshake test (does not use local credentials)
 powershell -ExecutionPolicy Bypass -File tests\run-remote-ssh.ps1
+
+# Public IPv4 handshake test
+powershell -ExecutionPolicy Bypass -File tests\run-remote-ssh.ps1 `
+  -HostName 47.94.23.233 -Port 22
 ```
 
 Remote verification connects to `ssh.github.com:443` by default, disables Pageant and connection sharing, and verifies only host-key negotiation and the server entering the `publickey` authentication stage. Without credentials, `No supported authentication methods available (server sent: publickey)` is an expected result: it means the SSH connection and handshake successfully reached authentication.
 
-The packaged artifact is `package/PuTTY-AI-windows-x64.zip`. It contains `putty-ai.exe`, the application-local VC Runtime, licenses, and test reports.
+The packaged artifact is `package/PuTTY-AI-windows-x64.zip`. It contains `putty.exe`, the application-local VC Runtime, licenses, and test reports.
 
 ## Development Plan
 
@@ -141,11 +172,13 @@ The packaged artifact is `package/PuTTY-AI-windows-x64.zip`. It contains `putty-
 - [x] Implement the terminal-side AI interaction panel
 - [x] Implement session-context extraction and length controls
 - [x] Integrate an OpenAI Chat Completions-compatible endpoint
+- [x] Support Chinese prompts and multi-turn conversations
+- [x] Persist Chat Completions settings and API keys across sessions
 - [x] Support Markdown, code blocks, and command display
 - [x] Support command confirmation and one-click filling
 - [x] Add dangerous-command detection and double confirmation
 - [x] Add sensitive-information redaction and privacy controls
-- [x] Add local knowledge files and metadata-only operation auditing
+- [x] Add metadata-only operation auditing
 
 ## Project Structure
 

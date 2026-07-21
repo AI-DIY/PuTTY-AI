@@ -61,7 +61,7 @@ flowchart LR
 
 ## 从源码构建
 
-仓库中的 Windows `putty` 目标会生成带原生 AI 侧边栏的 `putty-ai.exe`。实现仅依赖 Windows 自带的 WinHTTP 和 Rich Edit，不需要额外运行时或浏览器组件。
+仓库中的 Windows `putty` 目标会生成带原生 AI 侧边栏的 `putty.exe`，可直接配置给 AccessClient 使用。实现仅依赖 Windows 自带的 WinHTTP 和 Rich Edit，不需要额外运行时或浏览器组件。
 
 ### 环境要求
 
@@ -79,7 +79,7 @@ cmake --build build --config Release --target putty
 构建完成后，可执行文件通常位于：
 
 ```text
-build\Release\putty-ai.exe
+build\Release\putty.exe
 ```
 
 仓库也提供了会自动定位 Visual Studio 2022 Build Tools 的构建脚本：
@@ -88,36 +88,63 @@ build\Release\putty-ai.exe
 scripts\build-windows.cmd
 ```
 
+## 堡垒机兼容与连接保活
+
+- 支持 AccessClient 通过 `@会话名`、`-load 会话名`、`-load tmp:临时配置文件` 或 `-raw -P 本地端口` 启动连接。`tmp:` 文件按 UTF-8 的 `键=值` 格式读取，支持 HostName、PortNumber、UserName、WinTitle、终端尺寸和编码等 PuTTY 字段；`mode`、`websid` 等 AccessClient 私有字段会安全忽略。若 Raw 会话只提供有效的本地中转端口，程序会补全 `127.0.0.1` 并直接连接，不会跳转到 Configuration。
+- 非串口会话的应用层保活间隔会限制在最多 30 秒（未配置或配置过长时使用 30 秒），同时启用 Windows TCP keepalive；TCP 首次探测时间为 30 秒，后续探测间隔为 10 秒，以避免堡垒机、NAT 或防火墙因空闲而回收连接。
+- 保活用于避免空闲超时。若网络实际中断或远端关闭 SSH 传输，原会话无法无损恢复，需要重新连接。
+
+### AccessClient 启动诊断
+
+当前诊断版本会在参数解析前，把调用者和完整原始命令行追加到：
+
+```text
+%LOCALAPPDATA%\PuTTY AI\accessclient-launch.log
+```
+
+日志采用 UTF-8 JSON Lines，包含父进程 PID/路径、实际 `putty.exe` 路径、工作目录、`GetCommandLineW()` 完整命令行和 WinMain 参数。可使用以下命令查看最后一次调用：
+
+```powershell
+Get-Content "$env:LOCALAPPDATA\PuTTY AI\accessclient-launch.log" |
+  Select-Object -Last 1 | ConvertFrom-Json | Format-List
+```
+
+该诊断日志不脱敏，可能包含 `-pw`、用户名、主机和其他敏感参数。完成问题定位后必须删除日志，并在正式版本中关闭这项临时诊断。
+
 ## AI 面板使用
 
 建立 SSH 会话后，右侧会显示 PuTTY AI 面板：
 
-1. 点击 **Settings**，填写 OpenAI Chat Completions 兼容端点、模型名和 API Key。
-2. API Key 只保存在当前进程内，不会写入注册表；端点、模型、上下文长度和知识文件路径会保存到当前用户配置。
-3. 输入问题，可选择是否附带最近终端上下文。默认最多读取 12,000 个字符，可配置范围为 1,000～64,000。
-4. 上下文和可选知识文件发送前会进行尽力而为的密码、令牌、授权头和私钥脱敏。
-5. 回复中的 Markdown 标题、列表和代码块会显示在会话区。识别到命令后可点击 **Fill command**；程序只把命令回填到终端，不会自动发送 Enter。
-6. 删除、格式化、停服、改权限等高风险命令需要两次确认。
+1. 点击 **设置**，填写 OpenAI Chat Completions 兼容接口地址、模型名和 API Key。
+2. 点击 **永久保存** 后，接口地址、模型、API Key 和上下文长度都会保存到当前用户注册表，并在下次打开会话时恢复且可继续编辑。
+3. 终端上下文默认不发送；需要时手动勾选 **附带已脱敏的终端上下文**。上下文默认最多读取 12,000 个字符，可配置范围为 1,000～64,000。
+4. 模型请求使用流式响应，收到首个内容分片后会立即显示；回复完成后再统一整理 Markdown 排版。
+5. 终端上下文发送前会进行尽力而为的密码、令牌、授权头和私钥脱敏。
+6. 当前窗口内支持多轮会话，后续问题会携带此前成功的问题和回答；系统默认要求模型使用简体中文，但不要求每次给出命令，可以直接返回分析或纯文本结论。
+7. 回复中的 Markdown 标题、列表和代码块会显示在会话区。识别到命令后可点击 **填入命令**；程序只把命令回填到终端，不会自动发送 Enter。
+8. 从右侧聊天区点击回左侧终端即可恢复键盘交互。删除、格式化、停服、改权限等高风险命令需要两次确认。
+
+右侧面板的常规宽度为 480 像素；窗口较窄时会响应式收缩，并为左侧终端保留可交互区域。
 
 也可以通过环境变量提供当前会话的默认值：
 
 ```powershell
 $env:OPENAI_BASE_URL = "https://example.com/v1"
 $env:OPENAI_MODEL = "your-model"
-$env:OPENAI_API_KEY = "your-session-only-key"
+$env:OPENAI_API_KEY = "your-api-key"
 ```
 
-`OPENAI_BASE_URL` 可以是服务根地址或完整的 `/chat/completions` 地址。环境变量中的 API Key 同样不会持久化。
+`OPENAI_BASE_URL` 可以是服务根地址或完整的 `/chat/completions` 地址。环境变量只在没有已保存值时作为默认值；点击 **永久保存** 或发起请求后，当前设置会写入当前用户配置。
 
-### 本地知识与审计
+### 审计
 
-- Settings 中可选择一个不超过 256 KiB 的 UTF-8/UTF-16 `.md` 或 `.txt` 文件作为本地知识参考；内容同样会先经过敏感字段脱敏。
 - 程序默认记录不含问题、回复、上下文、命令正文和 API Key 的元数据审计日志，位置为 `%LOCALAPPDATA%\PuTTY AI\audit.log`。日志只包含时间、事件类型、模型端点主机和风险级别等信息。
 
 ## 测试与验证
 
 ```powershell
-# PuTTY 终端与行编辑回归测试
+# 配置、IPv4 地址清洗、连接保活、终端与行编辑回归测试
+build\Release\test_conf.exe
 build\Release\test_terminal.exe
 build\Release\test_lineedit.exe
 
@@ -129,11 +156,15 @@ powershell -ExecutionPolicy Bypass -File tests\run-integration.ps1 -Dangerous
 
 # 公开 SSH 服务握手测试（不使用本机凭据）
 powershell -ExecutionPolicy Bypass -File tests\run-remote-ssh.ps1
+
+# 指定公网 IPv4 地址握手测试
+powershell -ExecutionPolicy Bypass -File tests\run-remote-ssh.ps1 `
+  -HostName 47.94.23.233 -Port 22
 ```
 
 远程验证默认连接 `ssh.github.com:443`，禁用 Pageant 和连接共享，只验证主机密钥协商及服务端进入 `publickey` 认证阶段。未提供凭据时出现 `No supported authentication methods available (server sent: publickey)` 是预期结果，表示 SSH 连接和握手已经成功到达认证阶段。
 
-打包产物位于 `package/PuTTY-AI-windows-x64.zip`，包含 `putty-ai.exe`、应用本地 VC Runtime、许可证和测试报告。
+打包产物位于 `package/PuTTY-AI-windows-x64.zip`，包含 `putty.exe`、应用本地 VC Runtime、许可证和测试报告。
 
 ## 开发计划
 
@@ -142,11 +173,13 @@ powershell -ExecutionPolicy Bypass -File tests\run-remote-ssh.ps1
 - [x] 实现终端右侧 AI 交互面板
 - [x] 实现会话上下文提取与长度控制
 - [x] 接入 OpenAI Chat Completions 兼容接口
+- [x] 支持中文提示词与多轮会话
+- [x] 支持 Chat Completions 配置和 API Key 跨会话持久化
 - [x] 支持 Markdown、代码块与命令展示
 - [x] 支持命令确认和一键回填
 - [x] 增加危险命令识别与二次确认
 - [x] 增加敏感信息脱敏与隐私控制
-- [x] 增加本地知识文件、元数据操作审计等扩展能力
+- [x] 增加元数据操作审计等扩展能力
 
 ## 项目结构
 

@@ -19,6 +19,7 @@
 #include "ssh.h"
 
 #include <ws2tcpip.h>
+#include <mstcpip.h>
 
 #if HAVE_AFUNIX_H
 #include <afunix.h>
@@ -951,6 +952,21 @@ static DWORD try_connect(NetSocket *sock)
     if (sock->keepalive) {
         BOOL b = true;
         p_setsockopt(s, SOL_SOCKET, SO_KEEPALIVE, (void *) &b, sizeof(b));
+
+        /* The Windows default keepalive interval is about two hours, which
+         * is too long for the idle timeout commonly used by relay services.
+         * Tune it per socket so an idle connection receives traffic every
+         * 30 seconds without changing the host-wide TCP configuration. */
+        if (p_WSAIoctl) {
+            struct tcp_keepalive values;
+            DWORD returned = 0;
+            values.onoff = 1;
+            values.keepalivetime = 30000;
+            values.keepaliveinterval = 10000;
+            p_WSAIoctl(
+                s, SIO_KEEPALIVE_VALS, &values, sizeof(values), NULL, 0,
+                &returned, NULL, NULL);
+        }
     }
 
     /*

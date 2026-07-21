@@ -2398,6 +2398,7 @@ SeatPromptResult cmdline_get_passwd_input(
 bool cmdline_host_ok(Conf *);
 bool cmdline_verbose(void);
 bool cmdline_loaded_session(void);
+bool cmdline_port_argument(void);
 
 /*
  * Abstraction provided by each platform to represent a command-line

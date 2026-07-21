@@ -11,6 +11,9 @@ typedef struct WinGuiSeat WinGuiSeat;
 typedef struct AiPanel AiPanel;
 
 #define WM_PUTTY_AI_RESPONSE (WM_APP + 40)
+#define WM_PUTTY_AI_STREAM (WM_APP + 41)
+#define WM_PUTTY_AI_QUERY_DEFAULT_WIDTH (WM_APP + 42)
+#define WM_PUTTY_AI_QUERY_SELECTED_COLOUR (WM_APP + 43)
 
 int ai_panel_default_width(void);
 AiPanel *ai_panel_create(WinGuiSeat *wgs);
