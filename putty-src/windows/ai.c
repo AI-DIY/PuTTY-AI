@@ -3,8 +3,8 @@
  *
  * This module deliberately uses only APIs shipped with Windows. HTTP is
  * provided by WinHTTP, and the UI is made from standard controls plus the
- * system Rich Edit control. User-approved model settings are persisted in
- * the current user's PuTTY registry area.
+ * system Rich Edit control. User-approved model settings are stored for the
+ * current Windows user, with the API key protected by Windows DPAPI.
  */
 
 #include <stdio.h>
@@ -19,6 +19,7 @@
 #include "ai.h"
 
 #include <winhttp.h>
+#include <dpapi.h>
 #include <commctrl.h>
 #include <richedit.h>
 
@@ -31,7 +32,8 @@
 #define AI_CONTEXT_DEFAULT 12000
 #define AI_CONTEXT_MAX 64000
 #define AI_HISTORY_MAX_MESSAGES 32
-#define AI_REGISTRY_KEY L"Software\\SimonTatham\\PuTTY\\AI"
+#define AI_REGISTRY_KEY L"Software\\PuTTY AI"
+#define AI_LEGACY_REGISTRY_KEY L"Software\\SimonTatham\\PuTTY\\AI"
 
 enum {
     IDC_AI_BACKGROUND = 0x7100,
@@ -60,6 +62,22 @@ typedef struct AiRequest AiRequest;
 typedef struct AiResponse AiResponse;
 typedef struct AiStreamChunk AiStreamChunk;
 typedef struct AiHistoryEntry AiHistoryEntry;
+typedef struct RichStyle RichStyle;
+
+typedef enum AiMessageKind {
+    AI_MESSAGE_SYSTEM,
+    AI_MESSAGE_USER,
+    AI_MESSAGE_ASSISTANT,
+    AI_MESSAGE_ERROR,
+} AiMessageKind;
+
+struct RichStyle {
+    const wchar_t *face;
+    LONG height;
+    COLORREF text_colour;
+    COLORREF back_colour;
+    DWORD effects;
+};
 
 struct AiHistoryEntry {
     bool assistant;
@@ -78,7 +96,11 @@ struct AiPanel {
     bool busy;
     wchar_t *candidate_command;
     bool candidate_dangerous;
-    LONG stream_start;
+    LONG stream_message_start, stream_start;
+    char *stream_markdown;
+    size_t stream_length, stream_capacity;
+    ULONGLONG last_stream_render;
+    unsigned update_depth;
     AiHistoryEntry *history;
     size_t history_count, history_capacity;
 };
@@ -130,25 +152,48 @@ static wchar_t *control_text(HWND hwnd)
     return text;
 }
 
-static void registry_load_string(
-    const wchar_t *name, const wchar_t *fallback,
+static bool registry_load_string_from(
+    const wchar_t *key_path, const wchar_t *name,
     wchar_t *out, size_t outlen)
 {
     DWORD type = 0, bytes = (DWORD)(outlen * sizeof(wchar_t));
     LSTATUS status = RegGetValueW(
-        HKEY_CURRENT_USER, AI_REGISTRY_KEY, name,
+        HKEY_CURRENT_USER, key_path, name,
         RRF_RT_REG_SZ, &type, out, &bytes);
     if (status != ERROR_SUCCESS)
+        return false;
+    out[outlen - 1] = L'\0';
+    return true;
+}
+
+static void registry_load_string(
+    const wchar_t *name, const wchar_t *fallback,
+    wchar_t *out, size_t outlen)
+{
+    if (!registry_load_string_from(AI_REGISTRY_KEY, name, out, outlen) &&
+        !registry_load_string_from(
+            AI_LEGACY_REGISTRY_KEY, name, out, outlen))
         lstrcpynW(out, fallback, (int)outlen);
     out[outlen - 1] = L'\0';
 }
 
+static bool registry_load_dword_from(
+    const wchar_t *key_path, const wchar_t *name, DWORD *value)
+{
+    DWORD type = 0, bytes = sizeof(*value);
+    if (RegGetValueW(
+            HKEY_CURRENT_USER, key_path, name,
+            RRF_RT_REG_DWORD, &type, value, &bytes) != ERROR_SUCCESS)
+        return false;
+    return true;
+}
+
 static DWORD registry_load_dword(const wchar_t *name, DWORD fallback)
 {
-    DWORD value = fallback, type = 0, bytes = sizeof(value);
-    if (RegGetValueW(
-            HKEY_CURRENT_USER, AI_REGISTRY_KEY, name,
-            RRF_RT_REG_DWORD, &type, &value, &bytes) != ERROR_SUCCESS)
+    DWORD value;
+    if (!registry_load_dword_from(AI_REGISTRY_KEY, name, &value) &&
+        !registry_load_dword_from(
+            AI_LEGACY_REGISTRY_KEY, name, &value))
         return fallback;
     return value;
 }
@@ -178,15 +223,95 @@ static void registry_save_dword(const wchar_t *name, DWORD value)
     }
 }
 
-static void registry_delete_value(const wchar_t *name)
+static void registry_delete_value_from(
+    const wchar_t *key_path, const wchar_t *name)
 {
     HKEY key;
     if (RegOpenKeyExW(
-            HKEY_CURRENT_USER, AI_REGISTRY_KEY, 0, KEY_SET_VALUE,
+            HKEY_CURRENT_USER, key_path, 0, KEY_SET_VALUE,
             &key) == ERROR_SUCCESS) {
         RegDeleteValueW(key, name);
         RegCloseKey(key);
     }
+}
+
+static bool registry_save_protected_string(
+    const wchar_t *name, const wchar_t *value)
+{
+    DATA_BLOB input, encrypted;
+    HKEY key;
+    bool success = false;
+
+    input.cbData = (DWORD)((wcslen(value) + 1) * sizeof(wchar_t));
+    input.pbData = (BYTE *)value;
+    encrypted.cbData = 0;
+    encrypted.pbData = NULL;
+    if (!CryptProtectData(
+            &input, L"PuTTY AI setting", NULL, NULL, NULL,
+            CRYPTPROTECT_UI_FORBIDDEN, &encrypted))
+        return false;
+
+    if (RegCreateKeyExW(
+            HKEY_CURRENT_USER, AI_REGISTRY_KEY, 0, NULL, 0, KEY_SET_VALUE,
+            NULL, &key, NULL) == ERROR_SUCCESS) {
+        success = RegSetValueExW(
+            key, name, 0, REG_BINARY, encrypted.pbData,
+            encrypted.cbData) == ERROR_SUCCESS;
+        RegCloseKey(key);
+    }
+
+    SecureZeroMemory(encrypted.pbData, encrypted.cbData);
+    LocalFree(encrypted.pbData);
+    return success;
+}
+
+static bool registry_load_protected_string(
+    const wchar_t *name, wchar_t *out, size_t outlen)
+{
+    DATA_BLOB input, decrypted;
+    DWORD type = 0, bytes = 0;
+    BYTE *encrypted;
+    bool success = false;
+
+    out[0] = L'\0';
+    if (RegGetValueW(
+            HKEY_CURRENT_USER, AI_REGISTRY_KEY, name,
+            RRF_RT_REG_BINARY, &type, NULL, &bytes) != ERROR_SUCCESS ||
+        !bytes)
+        return false;
+
+    encrypted = snewn(bytes, BYTE);
+    if (RegGetValueW(
+            HKEY_CURRENT_USER, AI_REGISTRY_KEY, name,
+            RRF_RT_REG_BINARY, &type, encrypted, &bytes) != ERROR_SUCCESS) {
+        SecureZeroMemory(encrypted, bytes);
+        sfree(encrypted);
+        return false;
+    }
+
+    input.cbData = bytes;
+    input.pbData = encrypted;
+    decrypted.cbData = 0;
+    decrypted.pbData = NULL;
+    if (CryptUnprotectData(
+            &input, NULL, NULL, NULL, NULL,
+            CRYPTPROTECT_UI_FORBIDDEN, &decrypted) &&
+        decrypted.cbData >= sizeof(wchar_t) &&
+        decrypted.cbData % sizeof(wchar_t) == 0 &&
+        ((wchar_t *)decrypted.pbData)
+            [decrypted.cbData / sizeof(wchar_t) - 1] == L'\0') {
+        lstrcpynW(out, (wchar_t *)decrypted.pbData, (int)outlen);
+        out[outlen - 1] = L'\0';
+        success = true;
+    }
+
+    if (decrypted.pbData) {
+        SecureZeroMemory(decrypted.pbData, decrypted.cbData);
+        LocalFree(decrypted.pbData);
+    }
+    SecureZeroMemory(encrypted, bytes);
+    sfree(encrypted);
+    return success;
 }
 
 static void append_suffix_if_needed(
@@ -245,9 +370,17 @@ static void load_initial_settings(AiPanel *panel)
     SetWindowTextW(panel->limit, limit);
 
     /* Remove settings left behind by builds that exposed local knowledge. */
-    registry_delete_value(L"KnowledgeFile");
+    registry_delete_value_from(AI_REGISTRY_KEY, L"KnowledgeFile");
+    registry_delete_value_from(AI_LEGACY_REGISTRY_KEY, L"KnowledgeFile");
 
-    registry_load_string(L"ApiKey", L"", api_key, lenof(api_key));
+    api_key[0] = L'\0';
+    if (!registry_load_protected_string(
+            L"ApiKey", api_key, lenof(api_key)) &&
+        registry_load_string_from(
+            AI_LEGACY_REGISTRY_KEY, L"ApiKey", api_key, lenof(api_key))) {
+        if (registry_save_protected_string(L"ApiKey", api_key))
+            registry_delete_value_from(AI_LEGACY_REGISTRY_KEY, L"ApiKey");
+    }
     if (!api_key[0]) {
         DWORD n = GetEnvironmentVariableW(L"OPENAI_API_KEY", env, lenof(env));
         if (n > 0 && n < lenof(env))
@@ -278,15 +411,18 @@ static void ai_save_settings(AiPanel *panel)
     wchar_t *api_key = control_text(panel->key);
     unsigned limit = context_limit_from_control(panel);
     wchar_t limit_text[32];
+    bool api_key_saved;
 
     registry_save_string(L"Endpoint", endpoint);
     registry_save_string(L"Model", model);
-    registry_save_string(L"ApiKey", api_key);
+    api_key_saved = registry_save_protected_string(L"ApiKey", api_key);
     registry_save_dword(L"ContextChars", limit);
     _snwprintf(limit_text, lenof(limit_text), L"%u", limit);
     limit_text[lenof(limit_text) - 1] = L'\0';
     SetWindowTextW(panel->limit, limit_text);
-    SetWindowTextW(panel->status, L"设置已永久保存");
+    SetWindowTextW(
+        panel->status,
+        api_key_saved ? L"设置已永久保存" : L"API Key 安全保存失败");
 
     sfree(endpoint);
     sfree(model);
@@ -311,24 +447,110 @@ static void show_settings(AiPanel *panel, bool show)
     ai_panel_layout(panel);
 }
 
-static void rich_set_format(
-    HWND hwnd, const wchar_t *face, LONG height, COLORREF colour, bool bold)
+static RichStyle rich_style(
+    const wchar_t *face, LONG height, COLORREF text_colour,
+    COLORREF back_colour, DWORD effects)
+{
+    RichStyle style;
+    style.face = face;
+    style.height = height;
+    style.text_colour = text_colour;
+    style.back_colour = back_colour;
+    style.effects = effects;
+    return style;
+}
+
+static RichStyle message_body_style(AiMessageKind kind)
+{
+    switch (kind) {
+      case AI_MESSAGE_USER:
+        return rich_style(
+            L"Segoe UI", 190, RGB(24, 46, 68), RGB(232, 242, 252), 0);
+      case AI_MESSAGE_ASSISTANT:
+        return rich_style(
+            L"Segoe UI", 190, RGB(29, 33, 37), RGB(255, 255, 255), 0);
+      case AI_MESSAGE_ERROR:
+        return rich_style(
+            L"Segoe UI", 190, RGB(137, 36, 32), RGB(255, 239, 238), 0);
+      default:
+        return rich_style(
+            L"Segoe UI", 185, RGB(67, 72, 78), RGB(244, 246, 248), 0);
+    }
+}
+
+static RichStyle message_header_style(AiMessageKind kind)
+{
+    switch (kind) {
+      case AI_MESSAGE_USER:
+        return rich_style(
+            L"Segoe UI", 190, RGB(255, 255, 255), RGB(0, 92, 153),
+            CFE_BOLD);
+      case AI_MESSAGE_ASSISTANT:
+        return rich_style(
+            L"Segoe UI", 190, RGB(255, 255, 255), RGB(36, 105, 92),
+            CFE_BOLD);
+      case AI_MESSAGE_ERROR:
+        return rich_style(
+            L"Segoe UI", 190, RGB(255, 255, 255), RGB(171, 49, 43),
+            CFE_BOLD);
+      default:
+        return rich_style(
+            L"Segoe UI", 190, RGB(255, 255, 255), RGB(79, 86, 94),
+            CFE_BOLD);
+    }
+}
+
+static const wchar_t *message_label(AiMessageKind kind)
+{
+    switch (kind) {
+      case AI_MESSAGE_USER: return L" 你 ";
+      case AI_MESSAGE_ASSISTANT: return L" AI 助手 ";
+      case AI_MESSAGE_ERROR: return L" 错误 ";
+      default: return L" PuTTY AI ";
+    }
+}
+
+static void rich_set_format(HWND hwnd, const RichStyle *style)
 {
     CHARFORMAT2W cf;
     memset(&cf, 0, sizeof(cf));
     cf.cbSize = sizeof(cf);
-    cf.dwMask = CFM_FACE | CFM_SIZE | CFM_COLOR | CFM_BOLD;
-    cf.yHeight = height;
-    cf.crTextColor = colour;
-    if (bold)
-        cf.dwEffects |= CFE_BOLD;
-    lstrcpynW(cf.szFaceName, face, lenof(cf.szFaceName));
+    cf.dwMask = CFM_FACE | CFM_SIZE | CFM_COLOR | CFM_BACKCOLOR |
+        CFM_BOLD | CFM_ITALIC | CFM_UNDERLINE | CFM_STRIKEOUT;
+    cf.yHeight = style->height;
+    cf.crTextColor = style->text_colour;
+    cf.crBackColor = style->back_colour;
+    cf.dwEffects = style->effects;
+    lstrcpynW(cf.szFaceName, style->face, lenof(cf.szFaceName));
     SendMessageW(hwnd, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
 }
 
-static void rich_append_wide(
-    AiPanel *panel, const wchar_t *text, const wchar_t *face,
-    LONG height, COLORREF colour, bool bold)
+static void rich_finish_update(AiPanel *panel)
+{
+    LONG end = GetWindowTextLengthW(panel->transcript);
+    SendMessageW(panel->transcript, EM_SETSEL, end, end);
+    SendMessageW(panel->transcript, EM_SCROLLCARET, 0, 0);
+    RedrawWindow(
+        panel->transcript, NULL, NULL,
+        RDW_INVALIDATE | RDW_UPDATENOW | RDW_NOERASE);
+}
+
+static void rich_begin_update(AiPanel *panel)
+{
+    if (panel->update_depth++ == 0)
+        SendMessageW(panel->transcript, WM_SETREDRAW, FALSE, 0);
+}
+
+static void rich_end_update(AiPanel *panel)
+{
+    if (!panel->update_depth || --panel->update_depth != 0)
+        return;
+    SendMessageW(panel->transcript, WM_SETREDRAW, TRUE, 0);
+    rich_finish_update(panel);
+}
+
+static void rich_append_wide_style(
+    AiPanel *panel, const wchar_t *text, const RichStyle *style)
 {
     LONG start = GetWindowTextLengthW(panel->transcript);
     LONG end;
@@ -337,12 +559,10 @@ static void rich_append_wide(
         panel->transcript, EM_REPLACESEL, FALSE, (LPARAM)text);
     end = GetWindowTextLengthW(panel->transcript);
     SendMessageW(panel->transcript, EM_SETSEL, start, end);
-    rich_set_format(panel->transcript, face, height, colour, bold);
+    rich_set_format(panel->transcript, style);
     SendMessageW(panel->transcript, EM_SETSEL, end, end);
-    SendMessageW(panel->transcript, EM_SCROLLCARET, 0, 0);
-    RedrawWindow(
-        panel->transcript, NULL, NULL,
-        RDW_INVALIDATE | RDW_UPDATENOW | RDW_NOERASE);
+    if (!panel->update_depth)
+        rich_finish_update(panel);
 }
 
 static void rich_set_default_format(HWND hwnd)
@@ -350,70 +570,477 @@ static void rich_set_default_format(HWND hwnd)
     CHARFORMAT2W cf;
     memset(&cf, 0, sizeof(cf));
     cf.cbSize = sizeof(cf);
-    cf.dwMask = CFM_FACE | CFM_SIZE | CFM_COLOR | CFM_BOLD;
+    cf.dwMask = CFM_FACE | CFM_SIZE | CFM_COLOR | CFM_BACKCOLOR |
+        CFM_BOLD | CFM_ITALIC | CFM_UNDERLINE | CFM_STRIKEOUT;
     cf.yHeight = 190;
     cf.crTextColor = RGB(30, 30, 30);
+    cf.crBackColor = RGB(255, 255, 255);
     lstrcpynW(cf.szFaceName, L"Segoe UI", lenof(cf.szFaceName));
     SendMessageW(hwnd, EM_SETCHARFORMAT, SCF_DEFAULT, (LPARAM)&cf);
 }
 
-static void rich_append_utf8(
-    AiPanel *panel, const char *text, const wchar_t *face,
-    LONG height, COLORREF colour, bool bold)
+static void rich_append_utf8_n(
+    AiPanel *panel, const char *text, size_t len, const RichStyle *style)
 {
-    wchar_t *wide = dup_mb_to_wc(CP_UTF8, text);
-    rich_append_wide(panel, wide, face, height, colour, bold);
+    char *copy = snewn(len + 1, char);
+    wchar_t *wide;
+    memcpy(copy, text, len);
+    copy[len] = '\0';
+    wide = dup_mb_to_wc(CP_UTF8, copy);
+    rich_append_wide_style(panel, wide, style);
     sfree(wide);
+    sfree(copy);
 }
 
-static void append_markdown(AiPanel *panel, const char *markdown)
+static const char *find_unescaped_marker(
+    const char *start, const char *end, const char *marker, size_t marker_len)
+{
+    const char *p;
+    for (p = start; p + marker_len <= end; p++) {
+        if ((p == start || p[-1] != '\\') &&
+            !memcmp(p, marker, marker_len))
+            return p;
+    }
+    return NULL;
+}
+
+static bool markdown_escapable(char ch)
+{
+    return strchr("\\`*{}_[]()#+-.!|>~", ch) != NULL;
+}
+
+static void append_markdown_inline(
+    AiPanel *panel, const char *start, const char *end,
+    const RichStyle *base)
+{
+    const char *p = start, *plain = start;
+
+    while (p < end) {
+        const char *close;
+        size_t marker_len = 0;
+        DWORD effect = 0;
+
+        if (*p == '\\' && p + 1 < end && markdown_escapable(p[1])) {
+            if (p > plain)
+                rich_append_utf8_n(panel, plain, (size_t)(p - plain), base);
+            rich_append_utf8_n(panel, p + 1, 1, base);
+            p += 2;
+            plain = p;
+            continue;
+        }
+
+        if (*p == '`') {
+            close = find_unescaped_marker(p + 1, end, "`", 1);
+            if (close) {
+                RichStyle code = *base;
+                if (p > plain)
+                    rich_append_utf8_n(
+                        panel, plain, (size_t)(p - plain), base);
+                code.face = L"Consolas";
+                code.height = 185;
+                code.text_colour = RGB(31, 58, 70);
+                code.back_colour = RGB(232, 238, 242);
+                rich_append_utf8_n(
+                    panel, p + 1, (size_t)(close - p - 1), &code);
+                p = close + 1;
+                plain = p;
+                continue;
+            }
+        }
+
+        if (p + 2 <= end &&
+            (!memcmp(p, "**", 2) || !memcmp(p, "__", 2))) {
+            marker_len = 2;
+            effect = CFE_BOLD;
+        } else if (p + 2 <= end && !memcmp(p, "~~", 2)) {
+            marker_len = 2;
+            effect = CFE_STRIKEOUT;
+        } else if (*p == '*' || *p == '_') {
+            marker_len = 1;
+            effect = CFE_ITALIC;
+        }
+
+        if (marker_len && p + marker_len < end &&
+            !isspace((unsigned char)p[marker_len])) {
+            close = find_unescaped_marker(
+                p + marker_len, end, p, marker_len);
+            if (close && close > p + marker_len &&
+                !isspace((unsigned char)close[-1])) {
+                RichStyle decorated = *base;
+                if (p > plain)
+                    rich_append_utf8_n(
+                        panel, plain, (size_t)(p - plain), base);
+                decorated.effects |= effect;
+                append_markdown_inline(
+                    panel, p + marker_len, close, &decorated);
+                p = close + marker_len;
+                plain = p;
+                continue;
+            }
+        }
+
+        if (*p == '[') {
+            const char *label_end = find_unescaped_marker(p + 1, end, "](", 2);
+            const char *url_end = label_end ?
+                find_unescaped_marker(label_end + 2, end, ")", 1) : NULL;
+            if (url_end) {
+                RichStyle link = *base;
+                if (p > plain)
+                    rich_append_utf8_n(
+                        panel, plain, (size_t)(p - plain), base);
+                link.text_colour = RGB(0, 91, 158);
+                link.effects |= CFE_UNDERLINE;
+                append_markdown_inline(panel, p + 1, label_end, &link);
+                rich_append_wide_style(panel, L" (", base);
+                rich_append_utf8_n(
+                    panel, label_end + 2,
+                    (size_t)(url_end - label_end - 2), &link);
+                rich_append_wide_style(panel, L")", base);
+                p = url_end + 1;
+                plain = p;
+                continue;
+            }
+        }
+
+        if (*p == '<' && p + 8 < end &&
+            (!memcmp(p + 1, "https://", 8) ||
+             !memcmp(p + 1, "http://", 7))) {
+            close = find_unescaped_marker(p + 1, end, ">", 1);
+            if (close) {
+                RichStyle link = *base;
+                if (p > plain)
+                    rich_append_utf8_n(
+                        panel, plain, (size_t)(p - plain), base);
+                link.text_colour = RGB(0, 91, 158);
+                link.effects |= CFE_UNDERLINE;
+                rich_append_utf8_n(
+                    panel, p + 1, (size_t)(close - p - 1), &link);
+                p = close + 1;
+                plain = p;
+                continue;
+            }
+        }
+
+        p++;
+    }
+
+    if (plain < end)
+        rich_append_utf8_n(panel, plain, (size_t)(end - plain), base);
+}
+
+static bool markdown_horizontal_rule(const char *line, size_t len)
+{
+    char marker = 0;
+    size_t i, count = 0;
+    for (i = 0; i < len; i++) {
+        if (line[i] == ' ' || line[i] == '\t')
+            continue;
+        if (!marker)
+            marker = line[i];
+        if (line[i] != marker ||
+            (marker != '-' && marker != '*' && marker != '_'))
+            return false;
+        count++;
+    }
+    return count >= 3;
+}
+
+static bool markdown_table_separator(const char *line, size_t len)
+{
+    size_t i = 0, dashes, cells = 0;
+    bool saw_pipe = false;
+
+    while (i < len && isspace((unsigned char)line[i])) i++;
+    if (i < len && line[i] == '|') i++;
+    while (i < len) {
+        while (i < len && isspace((unsigned char)line[i])) i++;
+        if (i < len && line[i] == ':') i++;
+        dashes = 0;
+        while (i < len && line[i] == '-') {
+            dashes++;
+            i++;
+        }
+        if (dashes < 3)
+            return false;
+        if (i < len && line[i] == ':') i++;
+        while (i < len && isspace((unsigned char)line[i])) i++;
+        cells++;
+        if (i == len)
+            break;
+        if (line[i] != '|')
+            return false;
+        saw_pipe = true;
+        i++;
+        while (i < len && isspace((unsigned char)line[i])) i++;
+        if (i == len)
+            break;
+    }
+    return saw_pipe && cells > 0;
+}
+
+static bool markdown_has_pipe(const char *line, size_t len)
+{
+    return memchr(line, '|', len) != NULL;
+}
+
+static void append_table_row(
+    AiPanel *panel, const char *line, size_t len, const RichStyle *body,
+    bool header)
+{
+    const char *p = line, *end = line + len, *cell;
+    RichStyle table = *body;
+    RichStyle border = *body;
+    table.face = L"Consolas";
+    table.height = 180;
+    if (header)
+        table.effects |= CFE_BOLD;
+    border.face = L"Consolas";
+    border.text_colour = RGB(105, 113, 121);
+
+    while (p < end && isspace((unsigned char)*p)) p++;
+    if (p < end && *p == '|') p++;
+    while (end > p && isspace((unsigned char)end[-1])) end--;
+    if (end > p && end[-1] == '|') end--;
+
+    rich_append_wide_style(panel, L"\x2502 ", &border);
+    while (p <= end) {
+        const char *separator = p < end ?
+            memchr(p, '|', (size_t)(end - p)) : NULL;
+        const char *cell_end = separator ? separator : end;
+        cell = p;
+        while (cell < cell_end && isspace((unsigned char)*cell)) cell++;
+        while (cell_end > cell && isspace((unsigned char)cell_end[-1])) cell_end--;
+        append_markdown_inline(panel, cell, cell_end, &table);
+        if (!separator)
+            break;
+        rich_append_wide_style(panel, L" \x2502 ", &border);
+        p = separator + 1;
+    }
+    rich_append_wide_style(panel, L" \x2502\r\n", &border);
+}
+
+static void append_markdown(
+    AiPanel *panel, const char *markdown, const RichStyle *body)
 {
     const char *p = markdown;
-    bool code = false;
+    bool code = false, table = false;
+    char fence_char = 0;
+    size_t fence_length = 0;
 
     while (*p) {
         const char *eol = strchr(p, '\n');
         size_t len = eol ? (size_t)(eol - p) : strlen(p);
-        char *line = snewn(len + 2, char);
-        memcpy(line, p, len);
-        line[len] = '\n';
-        line[len + 1] = '\0';
+        size_t i = 0, marker_count = 0;
+        RichStyle line_style = *body;
 
-        if (len >= 3 && p[0] == '`' && p[1] == '`' && p[2] == '`') {
-            code = !code;
-        } else if (code) {
-            rich_append_utf8(
-                panel, line, L"Consolas", 190, RGB(38, 70, 83), false);
-        } else if (len > 0 && p[0] == '#') {
-            size_t skip = 0;
-            while (skip < len && p[skip] == '#')
-                skip++;
-            while (skip < len && p[skip] == ' ')
-                skip++;
-            memmove(line, line + skip, len + 2 - skip);
-            rich_append_utf8(
-                panel, line, L"Segoe UI", 220, RGB(26, 71, 107), true);
-        } else {
-            rich_append_utf8(
-                panel, line, L"Segoe UI", 190, RGB(30, 30, 30), false);
+        if (len > 0 && p[len - 1] == '\r')
+            len--;
+        while (i < len && i < 3 && p[i] == ' ') i++;
+        if (i < len && (p[i] == '`' || p[i] == '~')) {
+            char marker = p[i];
+            while (i + marker_count < len && p[i + marker_count] == marker)
+                marker_count++;
         }
 
-        sfree(line);
+        if (code) {
+            bool closing = marker_count >= fence_length && p[i] == fence_char;
+            size_t rest = i + marker_count;
+            while (closing && rest < len && isspace((unsigned char)p[rest]))
+                rest++;
+            if (closing && rest == len) {
+                code = false;
+            } else {
+                RichStyle code_style = *body;
+                code_style.face = L"Consolas";
+                code_style.height = 185;
+                code_style.text_colour = RGB(31, 58, 70);
+                code_style.back_colour = RGB(232, 238, 242);
+                rich_append_utf8_n(panel, p, len, &code_style);
+                rich_append_wide_style(panel, L"\r\n", &code_style);
+            }
+        } else if (marker_count >= 3) {
+            code = true;
+            fence_char = p[i];
+            fence_length = marker_count;
+            table = false;
+        } else if (len == 0) {
+            rich_append_wide_style(panel, L"\r\n", body);
+            table = false;
+        } else if (markdown_horizontal_rule(p, len)) {
+            RichStyle rule = *body;
+            rule.text_colour = RGB(164, 170, 176);
+            rich_append_wide_style(
+                panel, L"\x2500\x2500\x2500\x2500\x2500\x2500"
+                       L"\x2500\x2500\x2500\x2500\x2500\x2500"
+                       L"\x2500\x2500\x2500\x2500\x2500\x2500"
+                       L"\x2500\x2500\x2500\x2500\x2500\x2500\r\n",
+                &rule);
+            table = false;
+        } else {
+            const char *next = eol ? eol + 1 : NULL;
+            const char *next_eol = next ? strchr(next, '\n') : NULL;
+            size_t next_len = next ?
+                (next_eol ? (size_t)(next_eol - next) : strlen(next)) : 0;
+            bool table_header = markdown_has_pipe(p, len) && next &&
+                markdown_table_separator(next, next_len);
+
+            if (table_header) {
+                append_table_row(panel, p, len, body, true);
+                table = true;
+                p = next_eol ? next_eol + 1 : next + next_len;
+                if (!*p)
+                    break;
+                continue;
+            }
+            if (table && markdown_has_pipe(p, len)) {
+                append_table_row(panel, p, len, body, false);
+            } else {
+                size_t heading = 0, content = 0, indent = 0;
+                size_t quote_count = 0;
+
+                table = false;
+                while (heading < len && heading < 6 && p[heading] == '#')
+                    heading++;
+                if (heading > 0 && heading < len &&
+                    isspace((unsigned char)p[heading])) {
+                    static const LONG heading_sizes[] = {
+                        300, 270, 240, 220, 205, 195,
+                    };
+                    content = heading;
+                    while (content < len && isspace((unsigned char)p[content]))
+                        content++;
+                    line_style.height = heading_sizes[heading - 1];
+                    line_style.text_colour = RGB(24, 74, 111);
+                    line_style.effects |= CFE_BOLD;
+                    append_markdown_inline(
+                        panel, p + content, p + len, &line_style);
+                    rich_append_wide_style(panel, L"\r\n", &line_style);
+                } else {
+                    while (indent < len &&
+                           (p[indent] == ' ' || p[indent] == '\t'))
+                        indent++;
+                    content = indent;
+                    while (content < len && p[content] == '>') {
+                        quote_count++;
+                        content++;
+                        if (content < len && p[content] == ' ')
+                            content++;
+                    }
+                    if (quote_count) {
+                        RichStyle quote = *body;
+                        RichStyle quote_bar;
+                        size_t q;
+                        quote.back_colour = RGB(238, 246, 243);
+                        quote.text_colour = RGB(51, 78, 72);
+                        quote_bar = quote;
+                        quote_bar.text_colour = RGB(36, 105, 92);
+                        quote_bar.effects |= CFE_BOLD;
+                        for (q = 0; q < quote_count; q++)
+                            rich_append_wide_style(panel, L"\x2502 ", &quote_bar);
+                        append_markdown_inline(
+                            panel, p + content, p + len, &quote);
+                        rich_append_wide_style(panel, L"\r\n", &quote);
+                    } else {
+                        bool unordered = content + 1 < len &&
+                            strchr("-*+", p[content]) &&
+                            isspace((unsigned char)p[content + 1]);
+                        size_t digits = content;
+                        bool ordered;
+                        while (digits < len && isdigit((unsigned char)p[digits]))
+                            digits++;
+                        ordered = digits > content && digits + 1 < len &&
+                            (p[digits] == '.' || p[digits] == ')') &&
+                            isspace((unsigned char)p[digits + 1]);
+                        if (unordered || ordered) {
+                            RichStyle bullet = *body;
+                            size_t level, body_start;
+                            bullet.text_colour = unordered ?
+                                RGB(0, 92, 153) : RGB(36, 105, 92);
+                            bullet.effects |= CFE_BOLD;
+                            for (level = 0; level < indent / 2; level++)
+                                rich_append_wide_style(panel, L"  ", body);
+                            if (unordered) {
+                                rich_append_wide_style(panel, L"\x2022 ", &bullet);
+                                body_start = content + 2;
+                            } else {
+                                rich_append_utf8_n(
+                                    panel, p + content,
+                                    digits + 1 - content, &bullet);
+                                rich_append_wide_style(panel, L" ", &bullet);
+                                body_start = digits + 2;
+                            }
+                            append_markdown_inline(
+                                panel, p + body_start, p + len, body);
+                            rich_append_wide_style(panel, L"\r\n", body);
+                        } else {
+                            append_markdown_inline(panel, p, p + len, body);
+                            rich_append_wide_style(panel, L"\r\n", body);
+                        }
+                    }
+                }
+            }
+        }
+
         if (!eol)
             break;
         p = eol + 1;
     }
 }
 
-static void append_turn(AiPanel *panel, const wchar_t *speaker, const char *text)
+static void append_message_header(AiPanel *panel, AiMessageKind kind)
 {
-    rich_append_wide(
-        panel, speaker, L"Segoe UI", 205, RGB(0, 102, 153), true);
-    rich_append_wide(
-        panel, L"\r\n", L"Segoe UI", 190, RGB(30, 30, 30), false);
-    append_markdown(panel, text);
-    rich_append_wide(
-        panel, L"\r\n", L"Segoe UI", 190, RGB(30, 30, 30), false);
+    RichStyle body = message_body_style(kind);
+    RichStyle header = message_header_style(kind);
+    if (GetWindowTextLengthW(panel->transcript) > 0)
+        rich_append_wide_style(panel, L"\r\n", &body);
+    rich_append_wide_style(panel, message_label(kind), &header);
+    rich_append_wide_style(panel, L"\r\n", &body);
+}
+
+static void append_turn(AiPanel *panel, AiMessageKind kind, const char *text)
+{
+    RichStyle body = message_body_style(kind);
+    rich_begin_update(panel);
+    append_message_header(panel, kind);
+    append_markdown(panel, text, &body);
+    rich_append_wide_style(panel, L"\r\n", &body);
+    rich_end_update(panel);
+}
+
+static void reset_stream_markdown(AiPanel *panel)
+{
+    sfree(panel->stream_markdown);
+    panel->stream_markdown = NULL;
+    panel->stream_length = panel->stream_capacity = 0;
+    panel->last_stream_render = 0;
+}
+
+static void stream_markdown_append(AiPanel *panel, const char *text)
+{
+    size_t add = strlen(text);
+    size_t needed = panel->stream_length + add + 1;
+    if (needed > panel->stream_capacity) {
+        size_t capacity = panel->stream_capacity ? panel->stream_capacity : 512;
+        while (capacity < needed)
+            capacity *= 2;
+        panel->stream_markdown = sresize(
+            panel->stream_markdown, capacity, char);
+        panel->stream_capacity = capacity;
+    }
+    memcpy(panel->stream_markdown + panel->stream_length, text, add + 1);
+    panel->stream_length += add;
+}
+
+static void render_stream_markdown(AiPanel *panel, const char *markdown)
+{
+    RichStyle body = message_body_style(AI_MESSAGE_ASSISTANT);
+    LONG end = GetWindowTextLengthW(panel->transcript);
+    rich_begin_update(panel);
+    SendMessageW(panel->transcript, EM_SETSEL, panel->stream_start, end);
+    SendMessageW(
+        panel->transcript, EM_REPLACESEL, FALSE, (LPARAM)L"");
+    append_markdown(panel, markdown ? markdown : "", &body);
+    rich_end_update(panel);
 }
 
 static void history_add_turn(
@@ -1135,6 +1762,7 @@ static void set_candidate(AiPanel *panel, const char *response)
     SetWindowTextW(panel->apply, L"填入命令");
 
     if (command && command[0]) {
+        RichStyle notice;
         panel->candidate_command = dup_mb_to_wc(CP_UTF8, command);
         panel->candidate_dangerous = command_is_dangerous(command);
         EnableWindow(panel->apply, TRUE);
@@ -1142,14 +1770,18 @@ static void set_candidate(AiPanel *panel, const char *response)
             panel->apply,
             panel->candidate_dangerous ? L"检查高风险命令" :
                                          L"填入命令");
-        rich_append_wide(
+        notice = rich_style(
+            L"Segoe UI", 180,
+            panel->candidate_dangerous ? RGB(154, 62, 20) : RGB(31, 93, 80),
+            panel->candidate_dangerous ? RGB(255, 244, 232) :
+                                         RGB(238, 247, 244),
+            CFE_BOLD);
+        rich_append_wide_style(
             panel,
             panel->candidate_dangerous ?
                 L"检测到可能有危险的命令，填入前需要两次确认。\r\n\r\n" :
                 L"检测到候选命令，请检查后再填入终端。\r\n\r\n",
-            L"Segoe UI", 185,
-            panel->candidate_dangerous ? RGB(180, 70, 20) : RGB(0, 110, 80),
-            true);
+            &notice);
     }
     sfree(command);
 }
@@ -1252,7 +1884,8 @@ static void start_request(AiPanel *panel)
     audit_details[sizeof(audit_details) - 1] = '\0';
     audit_event(panel, "request-start", audit_details);
 
-    append_turn(panel, L"你", request->question);
+    reset_stream_markdown(panel);
+    append_turn(panel, AI_MESSAGE_USER, request->question);
     SetWindowTextW(panel->prompt, L"");
     SetWindowTextW(panel->status, L"正在连接模型服务...");
     EnableWindow(panel->ask, FALSE);
@@ -1262,18 +1895,19 @@ static void start_request(AiPanel *panel)
     if (!thread) {
         char *error = winhttp_error_text("启动请求线程");
         SetWindowTextW(panel->status, L"无法启动请求");
-        append_turn(panel, L"错误", error);
+        append_turn(panel, AI_MESSAGE_ERROR, error);
         sfree(error);
         panel->busy = false;
         EnableWindow(panel->ask, TRUE);
         free_request(request);
     } else {
         CloseHandle(thread);
-        rich_append_wide(
-            panel, L"AI 助手", L"Segoe UI", 205, RGB(0, 102, 153), true);
-        rich_append_wide(
-            panel, L"\r\n", L"Segoe UI", 190, RGB(30, 30, 30), false);
+        rich_begin_update(panel);
+        panel->stream_message_start =
+            GetWindowTextLengthW(panel->transcript);
+        append_message_header(panel, AI_MESSAGE_ASSISTANT);
         panel->stream_start = GetWindowTextLengthW(panel->transcript);
+        rich_end_update(panel);
     }
     sfree(question_w);
 }
@@ -1313,7 +1947,7 @@ AiPanel *ai_panel_create(WinGuiSeat *wgs)
         ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL,
         IDC_AI_TRANSCRIPT);
     SendMessageW(
-        panel->transcript, EM_SETBKGNDCOLOR, 0, RGB(255, 255, 255));
+        panel->transcript, EM_SETBKGNDCOLOR, 0, RGB(248, 249, 250));
     rich_set_default_format(panel->transcript);
     panel->prompt = make_control(
         panel, WS_EX_CLIENTEDGE, L"EDIT", L"",
@@ -1365,7 +1999,7 @@ AiPanel *ai_panel_create(WinGuiSeat *wgs)
     load_initial_settings(panel);
     show_settings(panel, false);
     append_turn(
-        panel, L"PuTTY AI",
+        panel, AI_MESSAGE_SYSTEM,
         "已就绪。终端上下文默认不发送，需要时可手动勾选。\n"
         "检测到命令时会先请求确认，绝不会自动执行。");
     ai_panel_layout(panel);
@@ -1383,6 +2017,7 @@ void ai_panel_destroy(AiPanel *panel)
         SetWindowTextW(panel->key, L"");
     }
     sfree(panel->candidate_command);
+    reset_stream_markdown(panel);
     {
         size_t i;
         for (i = 0; i < panel->history_count; i++)
@@ -1515,12 +2150,62 @@ bool ai_panel_handle_message(
         (void)lParam;
         return true;
     }
-    if (message == WM_PUTTY_AI_QUERY_SELECTED_COLOUR) {
+    if (message == WM_PUTTY_AI_QUERY_SELECTED_COLOUR ||
+        message == WM_PUTTY_AI_QUERY_SELECTED_STYLE ||
+        message == WM_PUTTY_AI_QUERY_SELECTED_BACK_COLOUR) {
         CHARFORMAT2W cf;
         memset(&cf, 0, sizeof(cf));
         cf.cbSize = sizeof(cf);
         SendMessageW(
             panel->transcript, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        if (result) {
+            if (message == WM_PUTTY_AI_QUERY_SELECTED_COLOUR) {
+                *result = cf.crTextColor;
+            } else if (message == WM_PUTTY_AI_QUERY_SELECTED_BACK_COLOUR) {
+                *result = cf.crBackColor;
+            } else {
+                DWORD style = 0;
+                if ((cf.dwMask & CFM_BOLD) && (cf.dwEffects & CFE_BOLD))
+                    style |= PUTTY_AI_STYLE_BOLD;
+                if ((cf.dwMask & CFM_ITALIC) && (cf.dwEffects & CFE_ITALIC))
+                    style |= PUTTY_AI_STYLE_ITALIC;
+                if ((cf.dwMask & CFM_UNDERLINE) &&
+                    (cf.dwEffects & CFE_UNDERLINE))
+                    style |= PUTTY_AI_STYLE_UNDERLINE;
+                if ((cf.dwMask & CFM_STRIKEOUT) &&
+                    (cf.dwEffects & CFE_STRIKEOUT))
+                    style |= PUTTY_AI_STYLE_STRIKEOUT;
+                if ((cf.dwMask & CFM_FACE) &&
+                    !_wcsicmp(cf.szFaceName, L"Consolas"))
+                    style |= PUTTY_AI_STYLE_CODE;
+                if (cf.dwMask & CFM_SIZE)
+                    style |= ((DWORD)cf.yHeight <<
+                              PUTTY_AI_STYLE_HEIGHT_SHIFT);
+                *result = style;
+            }
+        }
+        (void)wParam;
+        (void)lParam;
+        return true;
+    }
+    if (message == WM_PUTTY_AI_QUERY_LAST_RESPONSE_COLOUR) {
+        CHARFORMAT2W cf;
+        CHARRANGE saved;
+        LONG end = GetWindowTextLengthW(panel->transcript);
+        memset(&cf, 0, sizeof(cf));
+        cf.cbSize = sizeof(cf);
+        SendMessageW(
+            panel->transcript, EM_EXGETSEL, 0, (LPARAM)&saved);
+        if (panel->stream_start < end) {
+            SendMessageW(
+                panel->transcript, EM_SETSEL,
+                panel->stream_start, panel->stream_start + 1);
+            SendMessageW(
+                panel->transcript, EM_GETCHARFORMAT,
+                SCF_SELECTION, (LPARAM)&cf);
+        }
+        SendMessageW(
+            panel->transcript, EM_EXSETSEL, 0, (LPARAM)&saved);
         if (result)
             *result = cf.crTextColor;
         (void)wParam;
@@ -1531,10 +2216,15 @@ bool ai_panel_handle_message(
         AiStreamChunk *chunk = (AiStreamChunk *)lParam;
         if (chunk) {
             if (panel->busy) {
+                ULONGLONG now = GetTickCount64();
                 SetWindowTextW(panel->status, L"正在接收回复...");
-                rich_append_utf8(
-                    panel, chunk->text, L"Segoe UI", 190,
-                    RGB(30, 30, 30), false);
+                stream_markdown_append(panel, chunk->text);
+                if (!panel->last_stream_render ||
+                    now - panel->last_stream_render >= 40 ||
+                    strchr(chunk->text, '\n')) {
+                    render_stream_markdown(panel, panel->stream_markdown);
+                    panel->last_stream_render = now;
+                }
             }
             sfree(chunk->text);
             sfree(chunk);
@@ -1552,30 +2242,33 @@ bool ai_panel_handle_message(
         EnableWindow(panel->ask, TRUE);
         if (response) {
             if (response->ok) {
-                LONG end = GetWindowTextLengthW(panel->transcript);
+                RichStyle body = message_body_style(AI_MESSAGE_ASSISTANT);
                 SetWindowTextW(panel->status, L"回复完成");
                 audit_event(panel, "request-success", "");
-                SendMessageW(
-                    panel->transcript, EM_SETSEL, panel->stream_start, end);
-                SendMessageW(
-                    panel->transcript, EM_REPLACESEL, FALSE, (LPARAM)L"");
-                append_markdown(panel, response->text);
-                rich_append_wide(
-                    panel, L"\r\n\r\n", L"Segoe UI", 190,
-                    RGB(30, 30, 30), false);
+                render_stream_markdown(panel, response->text);
+                rich_append_wide_style(panel, L"\r\n", &body);
+                reset_stream_markdown(panel);
                 history_add_turn(panel, response->question, response->text);
                 set_candidate(panel, response->text);
             } else {
+                LONG end = GetWindowTextLengthW(panel->transcript);
                 SetWindowTextW(panel->status, L"模型请求失败");
                 audit_event(panel, "request-failure", "");
-                rich_append_wide(
-                    panel, L"\r\n", L"Segoe UI", 190,
-                    RGB(30, 30, 30), false);
-                append_turn(panel, L"错误", response->text);
+                rich_begin_update(panel);
+                SendMessageW(
+                    panel->transcript, EM_SETSEL,
+                    panel->stream_message_start, end);
+                SendMessageW(
+                    panel->transcript, EM_REPLACESEL, FALSE, (LPARAM)L"");
+                rich_end_update(panel);
+                reset_stream_markdown(panel);
+                append_turn(panel, AI_MESSAGE_ERROR, response->text);
             }
             sfree(response->text);
             sfree(response->question);
             sfree(response);
+        } else {
+            reset_stream_markdown(panel);
         }
     }
     if (result)

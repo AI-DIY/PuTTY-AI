@@ -1,8 +1,6 @@
 #include "putty.h"
 #include "storage.h"
 
-#include <tlhelp32.h>
-
 extern bool sesslist_demo_mode;
 extern Filename *dialog_box_demo_screenshot_filename;
 static strbuf *demo_terminal_data = NULL;
@@ -13,157 +11,10 @@ const unsigned cmdline_tooltype =
     TOOLTYPE_PORT_ARG |
     TOOLTYPE_NO_VERBOSE_OPTION;
 
-static void launch_log_json_string(strbuf *out, const char *text)
-{
-    const unsigned char *p = (const unsigned char *)text;
-
-    put_byte(out, '"');
-    while (*p) {
-        switch (*p) {
-          case '"': put_fmt(out, "\\\""); break;
-          case '\\': put_fmt(out, "\\\\"); break;
-          case '\b': put_fmt(out, "\\b"); break;
-          case '\f': put_fmt(out, "\\f"); break;
-          case '\n': put_fmt(out, "\\n"); break;
-          case '\r': put_fmt(out, "\\r"); break;
-          case '\t': put_fmt(out, "\\t"); break;
-          default:
-            if (*p < 0x20)
-                put_fmt(out, "\\u%04x", (unsigned)*p);
-            else
-                put_byte(out, *p);
-            break;
-        }
-        p++;
-    }
-    put_byte(out, '"');
-}
-
-static DWORD launch_log_parent_process_id(void)
-{
-    DWORD current_pid = GetCurrentProcessId(), parent_pid = 0;
-    PROCESSENTRY32W entry;
-    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-
-    if (snapshot == INVALID_HANDLE_VALUE)
-        return 0;
-
-    memset(&entry, 0, sizeof(entry));
-    entry.dwSize = sizeof(entry);
-    if (Process32FirstW(snapshot, &entry)) {
-        do {
-            if (entry.th32ProcessID == current_pid) {
-                parent_pid = entry.th32ParentProcessID;
-                break;
-            }
-        } while (Process32NextW(snapshot, &entry));
-    }
-
-    CloseHandle(snapshot);
-    return parent_pid;
-}
-
 /*
- * Temporary AccessClient diagnostics. This intentionally records the exact
- * unredacted Windows command line before cmdline processing can wipe secrets
- * such as -pw. The resulting file must be protected and removed after the
- * integration problem has been diagnosed.
- */
-static void write_accessclient_launch_log(const char *winmain_cmdline)
-{
-    wchar_t base[MAX_PATH], dir[MAX_PATH], path[MAX_PATH];
-    wchar_t executable[MAX_PATH], cwd[MAX_PATH], parent_executable[MAX_PATH];
-    wchar_t *winmain_wide;
-    char *full_utf8, *winmain_utf8, *executable_utf8, *cwd_utf8;
-    char *parent_executable_utf8;
-    SYSTEMTIME now;
-    HANDLE file, parent_process;
-    DWORD written, length, parent_pid;
-    strbuf *entry;
-
-    length = GetEnvironmentVariableW(L"LOCALAPPDATA", base, lenof(base));
-    if (!length || length >= lenof(base))
-        return;
-
-    _snwprintf(dir, lenof(dir), L"%s\\PuTTY AI", base);
-    dir[lenof(dir) - 1] = L'\0';
-    CreateDirectoryW(dir, NULL);
-    _snwprintf(path, lenof(path), L"%s\\accessclient-launch.log", dir);
-    path[lenof(path) - 1] = L'\0';
-
-    executable[0] = L'\0';
-    length = GetModuleFileNameW(NULL, executable, lenof(executable));
-    if (!length || length >= lenof(executable))
-        lstrcpynW(executable, L"[unavailable]", lenof(executable));
-
-    cwd[0] = L'\0';
-    length = GetCurrentDirectoryW(lenof(cwd), cwd);
-    if (!length || length >= lenof(cwd))
-        lstrcpynW(cwd, L"[unavailable]", lenof(cwd));
-
-    parent_pid = launch_log_parent_process_id();
-    lstrcpynW(parent_executable, L"[unavailable]", lenof(parent_executable));
-    parent_process = OpenProcess(
-        PROCESS_QUERY_LIMITED_INFORMATION, FALSE, parent_pid);
-    if (parent_process) {
-        length = lenof(parent_executable);
-        if (!QueryFullProcessImageNameW(
-                parent_process, 0, parent_executable, &length))
-            lstrcpynW(
-                parent_executable, L"[unavailable]", lenof(parent_executable));
-        CloseHandle(parent_process);
-    }
-
-    full_utf8 = dup_wc_to_mb(CP_UTF8, GetCommandLineW(), "");
-    winmain_wide = dup_mb_to_wc(CP_ACP, winmain_cmdline ? winmain_cmdline : "");
-    winmain_utf8 = dup_wc_to_mb(CP_UTF8, winmain_wide, "");
-    executable_utf8 = dup_wc_to_mb(CP_UTF8, executable, "");
-    cwd_utf8 = dup_wc_to_mb(CP_UTF8, cwd, "");
-    parent_executable_utf8 = dup_wc_to_mb(CP_UTF8, parent_executable, "");
-    sfree(winmain_wide);
-
-    GetSystemTime(&now);
-    entry = strbuf_new();
-    put_fmt(
-        entry,
-        "{\"timestamp\":\"%04u-%02u-%02uT%02u:%02u:%02u.%03uZ\","
-        "\"pid\":%lu,\"executable\":",
-        now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond,
-        now.wMilliseconds, (unsigned long)GetCurrentProcessId());
-    launch_log_json_string(entry, executable_utf8);
-    put_fmt(entry, ",\"parent_pid\":%lu,\"parent_executable\":",
-            (unsigned long)parent_pid);
-    launch_log_json_string(entry, parent_executable_utf8);
-    put_fmt(entry, ",\"working_directory\":");
-    launch_log_json_string(entry, cwd_utf8);
-    put_fmt(entry, ",\"command_line\":");
-    launch_log_json_string(entry, full_utf8);
-    put_fmt(entry, ",\"winmain_arguments\":");
-    launch_log_json_string(entry, winmain_utf8);
-    put_fmt(entry, "}\r\n");
-
-    file = CreateFileW(
-        path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
-        OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (file != INVALID_HANDLE_VALUE) {
-        WriteFile(file, entry->s, (DWORD)entry->len, &written, NULL);
-        CloseHandle(file);
-    }
-
-    strbuf_free(entry);
-    sfree(full_utf8);
-    sfree(winmain_utf8);
-    sfree(executable_utf8);
-    sfree(cwd_utf8);
-    sfree(parent_executable_utf8);
-}
-
-/*
- * AccessClient launches PuTTY with a saved Raw session whose port points at
- * its local relay, but some versions omit HostName. The normal PuTTY
- * behaviour is to open Configuration in that case. A direct automated
- * launch has no useful configuration interaction, so complete that form
- * with the loopback address instead.
+ * Some automated launchers provide a saved Raw session containing only a
+ * local relay port. A direct launch cannot usefully fall back to the
+ * Configuration dialog, so complete that form with the loopback address.
  */
 static bool complete_local_relay_destination(Conf *conf)
 {
@@ -182,8 +33,6 @@ void gui_term_process_cmdline(Conf *conf, char *cmdline)
     char *p;
     bool special_launchable_argument = false;
     bool demo_config_box = false;
-
-    write_accessclient_launch_log(cmdline);
 
     settings_set_default_protocol(be_default_protocol);
     /* Find the appropriate default port. */
@@ -306,11 +155,8 @@ void gui_term_process_cmdline(Conf *conf, char *cmdline)
 
     cmdline_run_saved(conf);
 
-    /*
-     * AccessClient versions use both -load and an explicit -raw -P form.
-     * In either form, the local relay port is the destination even when the
-     * host argument is omitted. Keep ordinary `putty' launches interactive.
-     */
+    /* A direct local-relay launch may omit the host but still supplies a
+     * usable destination port. Keep ordinary `putty' launches interactive. */
     if (!conf_launchable(conf) &&
         (cmdline_loaded_session() || cmdline_port_argument()) &&
         complete_local_relay_destination(conf))
@@ -365,7 +211,7 @@ const struct BackendVtable *backend_vt_from_conf(Conf *conf)
 
 const wchar_t *get_app_user_model_id(void)
 {
-    return L"SimonTatham.PuTTY";
+    return L"PuTTYAI.Client";
 }
 
 static void demo_terminal_screenshot(void *ctx, unsigned long now)

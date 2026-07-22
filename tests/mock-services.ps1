@@ -108,7 +108,11 @@ public static class PuttyAiMockServices
                             "rm -rf /tmp/putty-ai-test" : "echo putty-ai-ok";
                         deltas = new[] {
                             "## \u6a21\u62df\u5206\u6790\\n",
-                            "\u8fdc\u7a0b\u6a21\u578b\u670d\u52a1\u53ef\u4ee5\u8bbf\u95ee\u3002\\n\\n",
+                            "- **\u8fdc\u7a0b\u6a21\u578b\u670d\u52a1\u53ef\u4ee5\u8bbf\u95ee**\u3002\\n\\n",
+                            "> quote\\n\\n" +
+                            "1. item with *italic*, ~~removed~~, `inline`, " +
+                            "[docs](https://example.com)\\n\\n" +
+                            "| col | value |\\n| --- | --- |\\n| A | B |\\n\\n",
                             "```bash\\n" + command + "\\n```"
                         };
                     }

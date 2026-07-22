@@ -89,7 +89,7 @@ void prepare_session(Conf *conf)
 
     /* Keep interactive network sessions alive across idle relay timeouts.
      * A non-zero SSH/Telnet keepalive is harmless for active sessions, while
-     * TCP keepalive also covers Raw connections used by bastion clients. */
+     * TCP keepalive also covers Raw connections through local relays. */
     if (conf_get_int(conf, CONF_protocol) != PROT_SERIAL) {
         if (conf_get_int(conf, CONF_ping_interval) <= 0 ||
             conf_get_int(conf, CONF_ping_interval) > 30)

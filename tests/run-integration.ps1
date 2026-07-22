@@ -5,6 +5,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+Add-Type -AssemblyName System.Security
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 if (-not $ExePath) {
     $ExePath = Join-Path $root "build\Release\putty.exe"
@@ -20,6 +21,21 @@ $requestOnePath = Join-Path $ArtifactDirectory "mock-ai-request-1.json"
 $requestTwoPath = Join-Path $ArtifactDirectory "mock-ai-request-2.json"
 $requestThreePath = Join-Path $ArtifactDirectory "mock-ai-request-3.json"
 $authorizationThreePath = Join-Path $ArtifactDirectory "mock-ai-authorization-3.txt"
+$launchLogDirectory = Join-Path $env:LOCALAPPDATA "PuTTY AI"
+function Get-LaunchLogState {
+    $state = @{}
+    if (Test-Path -LiteralPath $launchLogDirectory) {
+        Get-ChildItem -LiteralPath $launchLogDirectory -Filter "*launch*.log" |
+            ForEach-Object {
+                $state[$_.Name] = [pscustomobject]@{
+                    Length = $_.Length
+                    LastWriteTimeUtc = $_.LastWriteTimeUtc
+                }
+            }
+    }
+    return $state
+}
+$launchLogBefore = Get-LaunchLogState
 Remove-Item -LiteralPath @(
     $capturePath, $requestOnePath, $requestTwoPath, $requestThreePath,
     $authorizationThreePath
@@ -68,7 +84,12 @@ $terminalContextMarker = [Text.Encoding]::UTF8.GetString(
     [Convert]::FromBase64String("57uI56uv5LiK5LiL5paH"))
 $savedStatus = [Text.Encoding]::UTF8.GetString(
     [Convert]::FromBase64String("6K6+572u5bey5rC45LmF5L+d5a2Y"))
-$aiRegistryPath = "Software\SimonTatham\PuTTY\AI"
+$expectedCommand = if ($Dangerous) {
+    "rm -rf /tmp/putty-ai-test"
+} else {
+    "echo putty-ai-ok"
+}
+$aiRegistryPath = "Software\PuTTY AI"
 $aiRegistrySnapshot = @()
 $aiRegistryExisted = $false
 $aiRegistryKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($aiRegistryPath)
@@ -94,14 +115,27 @@ try {
     $testAiRegistryKey.SetValue(
         "KnowledgeFile", "C:\obsolete-knowledge.md",
         [Microsoft.Win32.RegistryValueKind]::String)
+    $seedApiKeyBytes = [Text.Encoding]::Unicode.GetBytes("test-seed-key`0")
+    $protectedSeedApiKey = [Security.Cryptography.ProtectedData]::Protect(
+        $seedApiKeyBytes, $null,
+        [Security.Cryptography.DataProtectionScope]::CurrentUser)
+    try {
+        $testAiRegistryKey.SetValue(
+            "ApiKey", $protectedSeedApiKey,
+            [Microsoft.Win32.RegistryValueKind]::Binary)
+    }
+    finally {
+        [Array]::Clear($seedApiKeyBytes, 0, $seedApiKeyBytes.Length)
+        [Array]::Clear($protectedSeedApiKey, 0, $protectedSeedApiKey.Length)
+    }
 }
 finally {
     $testAiRegistryKey.Dispose()
 }
 
-# AccessClient can create a Raw saved session containing only its local relay
-# port. Direct @session and -load launches must fill in loopback and connect
-# instead of falling back to Configuration.
+# Automated launchers can create a Raw saved session containing only a local
+# relay port. Direct @session and -load launches must fill in loopback and
+# connect instead of falling back to Configuration.
 $bastionSessionName = "PuTTYAIRegression" + [Guid]::NewGuid().ToString("N")
 $bastionSessionRegistryPath =
     "Software\SimonTatham\PuTTY\Sessions\$bastionSessionName"
@@ -119,21 +153,20 @@ finally {
     $bastionSessionKey.Dispose()
 }
 
-$accessClientConfigPath = Join-Path $ArtifactDirectory "putty-accessclient-config.txt"
-$accessClientConfig = @(
+$temporaryConfigPath = Join-Path $ArtifactDirectory "putty-temporary-config.txt"
+$temporaryConfig = @(
     "NoRemoteWinTitle=1"
     "LineCodePage=UTF-8"
     "HostName=127.0.0.1"
-    "mode=direct"
+    "LauncherPrivateField=ignored"
     "PortNumber=18023"
     "TermHeight=24"
     "TermWidth=80"
-    "UserName=accessclient-test"
-    "websid=regression-session"
-    "WinTitle=root@AI中台_127.0.0.1"
+    "UserName=temporary-config-test"
+    "WinTitle=temporary-config-regression"
 ) -join "`n"
 [IO.File]::WriteAllText(
-    $accessClientConfigPath, $accessClientConfig,
+    $temporaryConfigPath, $temporaryConfig,
     [Text.UTF8Encoding]::new($false))
 
 Add-Type -TypeDefinition @'
@@ -268,6 +301,11 @@ function Get-WindowText([IntPtr]$Handle) {
     return $buffer.ToString()
 }
 
+function Convert-ToRichEditIndex([string]$Text, [int]$Index) {
+    if ($Index -le 0) { return $Index }
+    return [Text.Encoding]::UTF8.GetByteCount($Text.Substring(0, $Index))
+}
+
 function Set-UnicodeEditText([IntPtr]$Handle, [string]$Value) {
     [PuttyAiAutomation]::SendMessageText(
         $Handle, 0x000C, [IntPtr]::Zero, "") | Out-Null
@@ -344,11 +382,26 @@ try {
     Test-BastionDirectLaunch @("@$bastionSessionName")
     Test-BastionDirectLaunch @("-load", $bastionSessionName)
     Test-BastionDirectLaunch @(
-        "-load", "tmp:$accessClientConfigPath", "-pw", "mock-password")
+        "-load", "tmp:$temporaryConfigPath", "-pw", "mock-password")
 
     $putty = Start-Process -FilePath $ExePath -PassThru -ArgumentList @(
         "-raw", "127.0.0.1", "-P", "18022"
     )
+
+    $launchLogAfter = Get-LaunchLogState
+    $launchLogChanged = $launchLogBefore.Count -ne $launchLogAfter.Count
+    foreach ($name in $launchLogBefore.Keys) {
+        if (-not $launchLogAfter.ContainsKey($name) -or
+            $launchLogBefore[$name].Length -ne $launchLogAfter[$name].Length -or
+            $launchLogBefore[$name].LastWriteTimeUtc -ne
+                $launchLogAfter[$name].LastWriteTimeUtc) {
+            $launchLogChanged = $true
+            break
+        }
+    }
+    if ($launchLogChanged) {
+        throw "Production build wrote a sensitive command-line launch log"
+    }
 
     $main = [IntPtr]::Zero
     for ($i = 0; $i -lt 50 -and $main -eq [IntPtr]::Zero; $i++) {
@@ -472,6 +525,27 @@ try {
     if (-not $streamObserved) {
         throw "AI response was not displayed incrementally"
     }
+    $partialConversation = Get-WindowText $transcript
+    $streamMarkerIndex = $partialConversation.IndexOf($firstStreamMarker)
+    if ($streamMarkerIndex -lt 0 -or $partialConversation.Contains("## ")) {
+        throw "Streaming Markdown heading syntax was not rendered"
+    }
+    $streamSelectionIndex = Convert-ToRichEditIndex `
+        $partialConversation $streamMarkerIndex
+    [PuttyAiAutomation]::SendMessage(
+        $transcript, 0x00B1, [IntPtr]$streamSelectionIndex,
+        [IntPtr]($streamSelectionIndex + $firstStreamMarker.Length)) | Out-Null
+    $streamHeadingStyle = [PuttyAiAutomation]::SendMessage(
+        $main, 0x802C, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64()
+    [PuttyAiAutomation]::SendMessage(
+        $transcript, 0x00B1,
+        [IntPtr]($streamSelectionIndex + $firstStreamMarker.Length),
+        [IntPtr]($streamSelectionIndex + $firstStreamMarker.Length)) | Out-Null
+    if (($streamHeadingStyle -band 0x1) -eq 0 -or
+        (($streamHeadingStyle -shr 8) -band 0xFFFF) -le 190) {
+        throw "Streaming Markdown heading did not receive heading formatting " +
+            "(style=0x$($streamHeadingStyle.ToString('X')))"
+    }
 
     $requestOk = $false
     for ($i = 0; $i -lt 100; $i++) {
@@ -488,6 +562,68 @@ try {
     $conversation = Get-WindowText $transcript
     if (-not $conversation.Contains($firstAnswerMarker)) {
         throw "AI response was not rendered in the transcript"
+    }
+    if ($conversation.Contains('## ') -or $conversation.Contains('```') -or
+        $conversation.Contains('**') -or $conversation.Contains('*italic*') -or
+        $conversation.Contains('~~removed~~') -or
+        $conversation.Contains('[docs](') -or
+        $conversation.Contains('| --- |') -or
+        -not $conversation.Contains([string][char]0x2022)) {
+        throw "Completed Markdown syntax was not converted to rich text"
+    }
+    $tableRow = ([string][char]0x2502) + ' col ' +
+        ([string][char]0x2502) + ' value ' + ([string][char]0x2502)
+    if (-not $conversation.Contains(([string][char]0x2502) + ' quote') -or
+        -not $conversation.Contains('1. item with italic, removed, inline,') -or
+        -not $conversation.Contains('docs (https://example.com)') -or
+        -not $conversation.Contains($tableRow)) {
+        throw "Markdown block or inline content was not rendered as expected"
+    }
+    $commandMarkerIndex = $conversation.IndexOf($expectedCommand)
+    $codeStyleFound = $false
+    $italicStyleFound = $false
+    $strikeStyleFound = $false
+    $linkStyleFound = $false
+    $bodyBoldFound = $false
+    $userStyleFound = $false
+    $assistantStyleFound = $false
+    $userBodyBackColour = 232 -bor (242 -shl 8) -bor (252 -shl 16)
+    $userBodyTextColour = 24 -bor (46 -shl 8) -bor (68 -shl 16)
+    $assistantBodyTextColour = 29 -bor (33 -shl 8) -bor (37 -shl 16)
+    $richEditLimit = [Text.Encoding]::UTF8.GetByteCount($conversation) + 64
+    for ($scan = 0; $scan -lt $richEditLimit; $scan++) {
+        [PuttyAiAutomation]::SendMessage(
+            $transcript, 0x00B1, [IntPtr]$scan,
+            [IntPtr]($scan + 1)) | Out-Null
+        $scanStyle = [PuttyAiAutomation]::SendMessage(
+            $main, 0x802C, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64()
+        $scanBackColour = [PuttyAiAutomation]::SendMessage(
+            $main, 0x802D, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64() -band 0xFFFFFF
+        $scanTextColour = [PuttyAiAutomation]::SendMessage(
+            $main, 0x802B, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64() -band 0xFFFFFF
+        $scanHeight = ($scanStyle -shr 8) -band 0xFFFF
+        if (($scanStyle -band 0x10) -ne 0) {
+            $codeStyleFound = $true
+        }
+        if (($scanStyle -band 0x2) -ne 0) { $italicStyleFound = $true }
+        if (($scanStyle -band 0x4) -ne 0) { $linkStyleFound = $true }
+        if (($scanStyle -band 0x8) -ne 0) { $strikeStyleFound = $true }
+        if (($scanStyle -band 0x1) -ne 0 -and $scanHeight -eq 190 -and
+            $scanBackColour -eq 0xFFFFFF) { $bodyBoldFound = $true }
+        if ($scanBackColour -eq $userBodyBackColour -and
+            $scanTextColour -eq $userBodyTextColour) { $userStyleFound = $true }
+        if ($scanBackColour -eq 0xFFFFFF -and
+            $scanTextColour -eq $assistantBodyTextColour) {
+            $assistantStyleFound = $true
+        }
+    }
+    if ($commandMarkerIndex -lt 0 -or -not $codeStyleFound -or
+        -not $italicStyleFound -or -not $strikeStyleFound -or
+        -not $linkStyleFound -or -not $bodyBoldFound) {
+        throw "Markdown inline or code content did not receive rich-text formatting"
+    }
+    if (-not $userStyleFound -or -not $assistantStyleFound) {
+        throw "User and AI messages did not receive distinct visual styles"
     }
     if (-not [PuttyAiAutomation]::IsWindowEnabled($apply)) {
         throw "Command candidate was not detected"
@@ -547,11 +683,6 @@ try {
             throw "PuTTY AI automatically sent Enter with the command"
         }
     }
-    $expectedCommand = if ($Dangerous) {
-        "rm -rf /tmp/putty-ai-test"
-    } else {
-        "echo putty-ai-ok"
-    }
     if ($received -ne "(buffered by local line discipline)" -and
         $received -ne $expectedCommand) {
         throw "Unexpected terminal fill payload: '$received'"
@@ -585,15 +716,8 @@ try {
         throw "A pure-text response incorrectly left a command candidate enabled"
     }
     $secondMarkerIndex = $conversation.IndexOf($secondAnswerMarker)
-    [PuttyAiAutomation]::SendMessage(
-        $transcript, 0x00B1, [IntPtr]$secondMarkerIndex,
-        [IntPtr]($secondMarkerIndex + $secondAnswerMarker.Length)) | Out-Null
     $secondMarkerColor = [PuttyAiAutomation]::SendMessage(
-        $main, 0x802B, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32()
-    [PuttyAiAutomation]::SendMessage(
-        $transcript, 0x00B1,
-        [IntPtr]($secondMarkerIndex + $secondAnswerMarker.Length),
-        [IntPtr]($secondMarkerIndex + $secondAnswerMarker.Length)) | Out-Null
+        $main, 0x802E, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32()
     if ($secondMarkerIndex -lt 0 -or
         ($secondMarkerColor -band 0xFFFFFF) -eq 0xFFFFFF) {
         throw "AI transcript response text was rendered in white"
@@ -656,11 +780,27 @@ try {
     $savedKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($aiRegistryPath)
     if (-not $savedKey) { throw "AI registry settings key was not created" }
     try {
+        $encryptedApiKey = $savedKey.GetValue("ApiKey")
         if ($savedKey.GetValue("Endpoint") -ne
                 "http://127.0.0.1:18080/v1/chat/completions" -or
             $savedKey.GetValue("Model") -ne "persist-model" -or
-            $savedKey.GetValue("ApiKey") -ne "persist-key") {
+            $savedKey.GetValueKind("ApiKey") -ne
+                [Microsoft.Win32.RegistryValueKind]::Binary -or
+            -not ($encryptedApiKey -is [byte[]])) {
             throw "Chat Completions settings were not persisted correctly"
+        }
+        $plainApiKeyBytes = [Security.Cryptography.ProtectedData]::Unprotect(
+            $encryptedApiKey, $null,
+            [Security.Cryptography.DataProtectionScope]::CurrentUser)
+        try {
+            $plainApiKey = [Text.Encoding]::Unicode.GetString(
+                $plainApiKeyBytes).TrimEnd([char]0)
+            if ($plainApiKey -ne "persist-key") {
+                throw "Persisted API key could not be decrypted for this user"
+            }
+        }
+        finally {
+            [Array]::Clear($plainApiKeyBytes, 0, $plainApiKeyBytes.Length)
         }
     }
     finally {
@@ -754,6 +894,8 @@ try {
         ChinesePrompt = "passed"
         MultiTurnConversation = "passed"
         PersistentChatCompletions = "passed"
+        ProtectedApiKey = "Windows DPAPI"
+        SensitiveLaunchLogging = "disabled"
         MarkdownRender = "passed"
         CommandDetection = "passed"
         Confirmation = "passed"
@@ -774,28 +916,21 @@ finally {
         Stop-Process -Id $server.Id -Force
     }
 
-    $puttyRegistryKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey(
-        "Software\SimonTatham\PuTTY", $true)
-    if ($puttyRegistryKey) {
+    [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree(
+        $aiRegistryPath, $false)
+    if ($aiRegistryExisted) {
+        $restoredKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey(
+            $aiRegistryPath)
         try {
-            $puttyRegistryKey.DeleteSubKeyTree("AI", $false)
-            if ($aiRegistryExisted) {
-                $restoredKey = $puttyRegistryKey.CreateSubKey("AI")
-                try {
-                    foreach ($entry in $aiRegistrySnapshot) {
-                        $restoredKey.SetValue($entry.Name, $entry.Value, $entry.Kind)
-                    }
-                }
-                finally {
-                    $restoredKey.Dispose()
-                }
+            foreach ($entry in $aiRegistrySnapshot) {
+                $restoredKey.SetValue($entry.Name, $entry.Value, $entry.Kind)
             }
         }
         finally {
-            $puttyRegistryKey.Dispose()
+            $restoredKey.Dispose()
         }
     }
     [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree(
         $bastionSessionRegistryPath, $false)
-    Remove-Item -LiteralPath $accessClientConfigPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $temporaryConfigPath -Force -ErrorAction SilentlyContinue
 }

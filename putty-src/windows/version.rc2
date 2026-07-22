@@ -12,14 +12,33 @@
 #include "version.h"
 #include "licence.h"
 
+#ifndef APP_BINARY_VERSION
+#define APP_BINARY_VERSION BINARY_VERSION
+#endif
+#ifndef APP_TEXT_VERSION
+#define APP_TEXT_VERSION TEXTVER
+#endif
+#ifndef APP_COMPANY_NAME
+#define APP_COMPANY_NAME "Simon Tatham"
+#endif
+#ifndef APP_PRODUCT_NAME
+#define APP_PRODUCT_NAME "PuTTY suite"
+#endif
+#ifndef APP_ORIGINAL_FILENAME
+#define APP_ORIGINAL_FILENAME APPNAME
+#endif
+#ifndef APP_LEGAL_COPYRIGHT
+#define APP_LEGAL_COPYRIGHT "Copyright \251 " SHORT_COPYRIGHT_DETAILS "."
+#endif
+
 /*
  * The actual VERSIONINFO resource.
  */
 VS_VERSION_INFO VERSIONINFO
 /* (None of this "fixed" info appears to be trivially user-visible on
  * Win98SE. The binary version does show up on Win2K.) */
-FILEVERSION	BINARY_VERSION
-PRODUCTVERSION	BINARY_VERSION	/* version of whole suite */
+FILEVERSION	APP_BINARY_VERSION
+PRODUCTVERSION	APP_BINARY_VERSION
 FILEFLAGSMASK	VS_FF_DEBUG | VS_FF_PRERELEASE | VS_FF_PRIVATEBUILD
 FILEFLAGS	0x0L
 #if defined DEBUG
@@ -41,23 +60,21 @@ BEGIN
 	/* "lang-charset" LLLLCCCC = (UK English, Unicode) */
 	BLOCK "080904B0"
 	BEGIN
-	    VALUE "CompanyName",	"Simon Tatham"  /* required :/ */
-	    VALUE "ProductName",	"PuTTY suite"
+	    VALUE "CompanyName",	APP_COMPANY_NAME
+	    VALUE "ProductName",	APP_PRODUCT_NAME
 	    VALUE "FileDescription",	APPDESC
 	    VALUE "InternalName",	APPNAME
-	    VALUE "OriginalFilename",	APPNAME
+	    VALUE "OriginalFilename",	APP_ORIGINAL_FILENAME
 #if (defined HELPVER)
-	    /* FIXME: this doesn't seem to be visible in Win7/Win10's UI.
-	     * Oh well. */
-	    VALUE "FileVersion",	TEXTVER HELPVER
+	    VALUE "FileVersion",	APP_TEXT_VERSION HELPVER
 #else
-	    VALUE "FileVersion",	TEXTVER
+	    VALUE "FileVersion",	APP_TEXT_VERSION
 #endif
-	    VALUE "ProductVersion",	TEXTVER
-	    VALUE "LegalCopyright",	"Copyright \251 " SHORT_COPYRIGHT_DETAILS "."
+	    VALUE "ProductVersion",	APP_TEXT_VERSION
+	    VALUE "LegalCopyright",	APP_LEGAL_COPYRIGHT
 #if (!defined SNAPSHOT) && (!defined RELEASE) && (!defined PRERELEASE)
 	    /* Only if VS_FF_PRIVATEBUILD. */
-	    VALUE "PrivateBuild",	TEXTVER /* NBI */
+	    VALUE "PrivateBuild",	APP_TEXT_VERSION
 #endif
 	END
     END

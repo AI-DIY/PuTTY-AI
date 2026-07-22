@@ -116,6 +116,7 @@ target_link_libraries(putty
   guiterminal guimisc eventloop sshclient otherbackends settings network crypto
   utils
   winhttp
+  crypt32
   ${platform_libraries})
 set_target_properties(putty PROPERTIES
   WIN32_EXECUTABLE ON)

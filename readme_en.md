@@ -9,12 +9,14 @@ An AI-enhanced SSH client based on [PuTTY](https://www.chiark.greenend.org.uk/~s
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square)
 ![PuTTY](https://img.shields.io/badge/PuTTY-0.84-5C2D91?style=flat-square)
 ![Language](https://img.shields.io/badge/language-C-A8B9CC?style=flat-square)
-![Status](https://img.shields.io/badge/status-preview-blue?style=flat-square)
+![Version](https://img.shields.io/badge/version-v1.0.0-success?style=flat-square)
 
 </div>
 
 > [!IMPORTANT]
-> This project is currently in preview. The Windows client integrates an AI sidebar, terminal context, compatible model endpoints, command confirmation, and safety controls. AI output may still be incorrect. Always review generated commands manually before executing them; direct use in unattended production operations is not recommended.
+> `v1.0.0` has completed the current development, optimization, and regression-test cycle. The Windows client integrates an AI sidebar, optional terminal context, compatible model endpoints, command confirmation, and safety controls. AI output may still be incorrect. Always review generated commands manually before executing them; direct use in unattended production operations is not recommended.
+
+This is an independently maintained project. It is not affiliated with, authorized by, sponsored by, or endorsed by PuTTY, OpenAI, any model provider, or any bastion-client vendor. Third-party names are used only to describe compatibility and license attribution; all related rights belong to their respective owners.
 
 ## Overview
 
@@ -22,14 +24,14 @@ Developers, operations engineers, and technical support staff often switch repea
 
 PuTTY AI adds an AI assistant that can understand the current terminal session while preserving the familiar PuTTY workflow. Users can describe a problem in natural language and ask the AI to analyze logs, explain commands, locate faults, and generate operational suggestions.
 
-## Target Capabilities
+## Features
 
 - **Terminal context awareness**: Read the current SSH session on demand, reducing manual copying and background setup.
 - **Natural-language interaction**: Ask directly about error causes, system status, troubleshooting approaches, or Linux command usage.
 - **Fault and log analysis**: Summarize anomalies from terminal output and provide troubleshooting steps that can be verified.
 - **Command generation and explanation**: Generate candidate commands and explain their purpose, parameters, and potential impact.
 - **Fill after confirmation**: Show a command first, ask for confirmation, and then send it to the SSH terminal to reduce accidental operations.
-- **Compatible custom models**: Planned support for OpenAI Chat Completions-compatible endpoints makes it easier to connect different model services.
+- **Compatible custom models**: Supports OpenAI Chat Completions-compatible endpoints, streaming responses, and persistent settings.
 
 ## Target Interaction Flow
 
@@ -60,7 +62,7 @@ The project is primarily intended for development engineers, operations engineer
 
 ## Building from Source
 
-The Windows `putty` target in this repository produces `putty.exe` with a native AI sidebar, ready to configure as the AccessClient executable. The implementation uses only Windows-provided WinHTTP and Rich Edit and does not require additional runtimes or browser components.
+The Windows `putty` target in this repository produces `putty.exe` with a native AI sidebar. The implementation uses Windows-provided WinHTTP, Rich Edit, and data-protection APIs and does not require browser components.
 
 ### Requirements
 
@@ -87,35 +89,20 @@ The repository also provides a build script that automatically locates Visual St
 scripts\build-windows.cmd
 ```
 
-## Bastion Compatibility and Connection Keepalive
+## Automated Launch Compatibility and Connection Keepalive
 
-- AccessClient can launch connections through `@session-name`, `-load session-name`, `-load tmp:temporary-config-file`, or `-raw -P local-port`. A `tmp:` file is read as UTF-8 `key=value` data and supports PuTTY fields such as HostName, PortNumber, UserName, WinTitle, terminal dimensions, and encoding; AccessClient-private fields such as `mode` and `websid` are safely ignored. If a Raw session contains a valid local relay port but no host, PuTTY AI fills in `127.0.0.1` and connects directly instead of opening Configuration.
+- Automated launchers can start connections through `@session-name`, `-load session-name`, `-load tmp:temporary-config-file`, or `-raw -P local-port`. A `tmp:` file is read as UTF-8 `key=value` data and supports PuTTY fields such as HostName, PortNumber, UserName, WinTitle, terminal dimensions, and encoding; unknown fields are ignored. If a Raw session contains a valid local relay port but no host, PuTTY AI fills in `127.0.0.1` and connects directly instead of opening Configuration.
 - Network sessions cap the application keepalive interval at 30 seconds (using 30 seconds when unset or configured longer) and enable Windows TCP keepalive. The first TCP probe is sent after 30 seconds and later probes use a 10-second interval, preventing idle cleanup by bastions, NAT gateways, and firewalls.
 - Keepalives prevent idle timeouts. A real network outage or a remote SSH transport shutdown cannot resume the existing session and still requires reconnection.
 
-### AccessClient Launch Diagnostics
-
-This diagnostic build appends the caller and complete original command line before argument processing to:
-
-```text
-%LOCALAPPDATA%\PuTTY AI\accessclient-launch.log
-```
-
-The UTF-8 JSON Lines file contains the parent process PID/path, actual `putty.exe` path, working directory, complete `GetCommandLineW()` value, and WinMain arguments. View the latest launch with:
-
-```powershell
-Get-Content "$env:LOCALAPPDATA\PuTTY AI\accessclient-launch.log" |
-  Select-Object -Last 1 | ConvertFrom-Json | Format-List
-```
-
-This diagnostic log is intentionally unredacted and may contain `-pw`, usernames, hosts, and other sensitive arguments. Delete it after diagnosis and disable this temporary tracing before a production release.
+Production builds do not record the original launch command line, preventing `-pw`, usernames, hosts, and other sensitive arguments from being written to a diagnostic file.
 
 ## Using the AI Panel
 
 After establishing an SSH session, the PuTTY AI panel appears on the right:
 
 1. Click **设置** and enter an OpenAI Chat Completions-compatible endpoint, model name, and API key.
-2. After clicking **永久保存**, the endpoint, model, API key, and context length are persisted in the current user's registry and restored as editable values in the next session.
+2. After clicking **永久保存**, the endpoint, model, API key, and context length are persisted for the current Windows user and restored as editable values in the next session. The API key is protected with Windows DPAPI and is not stored as plaintext in the registry.
 3. Terminal context is disabled by default. Select **附带已脱敏的终端上下文** only when it is needed. The default maximum is 12,000 characters; the configurable range is 1,000 to 64,000.
 4. Model requests use streaming responses, so the first content chunk appears immediately. Markdown is formatted once the response completes.
 5. Before terminal context is sent, the client makes a best-effort attempt to redact passwords, tokens, authorization headers, and private keys.
@@ -156,14 +143,14 @@ powershell -ExecutionPolicy Bypass -File tests\run-integration.ps1 -Dangerous
 # Public SSH service handshake test (does not use local credentials)
 powershell -ExecutionPolicy Bypass -File tests\run-remote-ssh.ps1
 
-# Public IPv4 handshake test
+# Test an SSH service you own or are authorized to probe
 powershell -ExecutionPolicy Bypass -File tests\run-remote-ssh.ps1 `
-  -HostName 47.94.23.233 -Port 22
+  -HostName ssh.example.com -Port 22
 ```
 
 Remote verification connects to `ssh.github.com:443` by default, disables Pageant and connection sharing, and verifies only host-key negotiation and the server entering the `publickey` authentication stage. Without credentials, `No supported authentication methods available (server sent: publickey)` is an expected result: it means the SSH connection and handshake successfully reached authentication.
 
-The packaged artifact is `package/PuTTY-AI-windows-x64.zip`. It contains `putty.exe`, the application-local VC Runtime, licenses, and test reports.
+The packaged artifact is `package/PuTTY-AI-v1.0.0-windows-x64.zip`. It contains `putty.exe`, the application-local VC Runtime, project and PuTTY licenses, third-party notices, and release notes.
 
 ## Development Plan
 
@@ -172,8 +159,10 @@ The packaged artifact is `package/PuTTY-AI-windows-x64.zip`. It contains `putty.
 - [x] Implement the terminal-side AI interaction panel
 - [x] Implement session-context extraction and length controls
 - [x] Integrate an OpenAI Chat Completions-compatible endpoint
+- [x] Enable streaming responses and native Markdown formatting
+- [x] Disable terminal-context transmission by default
 - [x] Support Chinese prompts and multi-turn conversations
-- [x] Persist Chat Completions settings and API keys across sessions
+- [x] Persist Chat Completions settings and DPAPI-protected API keys across sessions
 - [x] Support Markdown, code blocks, and command display
 - [x] Support command confirmation and one-click filling
 - [x] Add dangerous-command detection and double confirmation
@@ -194,7 +183,7 @@ putty-ai/
 
 AI-generated commands may be inaccurate or unsuitable for the current environment. Before executing any command, verify the target host, permission scope, and expected impact. Take particular care with high-risk operations such as deleting files, changing permissions, or stopping services.
 
-After model integration is complete, the project will prioritize context-scope controls, sensitive-information redaction, and dangerous-command confirmation. Even with these safeguards, do not send passwords, private keys, tokens, or other confidential information to an untrusted model service.
+The current release provides context-scope controls, sensitive-information redaction, Windows DPAPI user-level protection for saved API keys, and dangerous-command confirmation. Production builds do not record original launch command lines. Even with these safeguards, do not send passwords, private keys, tokens, or other confidential information to an untrusted model service.
 
 ## Contributing
 
@@ -206,7 +195,7 @@ Before submitting code, keep the scope of your changes clear and include the nec
 
 This project explores and develops against the [PuTTY](https://www.chiark.greenend.org.uk/~sgtatham/putty/) 0.84 source code. It is not an official PuTTY project.
 
-The PuTTY source code in this repository is distributed under its original license. See [putty-src/LICENCE](putty-src/LICENCE) for details.
+Original PuTTY AI additions and project-specific materials are covered by the root [LICENSE](LICENSE). The incorporated PuTTY source remains under its original license; see [putty-src/LICENCE](putty-src/LICENCE). Original copyright holders and organization names are retained only where required for license attribution and do not imply affiliation.
 
 ---
 

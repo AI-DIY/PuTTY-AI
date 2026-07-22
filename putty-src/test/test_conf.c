@@ -1049,7 +1049,7 @@ static void test_prepare_session_host_whitespace(void)
     static const struct {
         const char *input, *expected;
     } tests[] = {
-        { " \t\r\n47.94.23.233\r\n", "47.94.23.233" },
+        { " \t\r\n192.0.2.123\r\n", "192.0.2.123" },
         { "server.\r\nexample.com", "server.example.com" },
         { "\v[2001:db8::1]\f", "[2001:db8::1]" },
     };

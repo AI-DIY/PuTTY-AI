@@ -1,1 +1,0 @@
-D:\development\Project\putty-ai\build\windows\handle-io.dir\Release\handle-io.lib

@@ -106,7 +106,7 @@ static void free_file_settings(tree234 *settings)
     freetree234(settings);
 }
 
-static settings_r *open_accessclient_settings_file(const char *filename)
+static settings_r *open_temporary_settings_file(const char *filename)
 {
     const size_t max_file_size = 1024 * 1024;
     wchar_t *wide_filename = dup_mb_to_wc(CP_ACP, filename);
@@ -178,7 +178,7 @@ static settings_r *open_accessclient_settings_file(const char *filename)
 settings_r *open_settings_r(const char *sessionname)
 {
     if (sessionname && !strncmp(sessionname, "tmp:", 4) && sessionname[4])
-        return open_accessclient_settings_file(sessionname + 4);
+        return open_temporary_settings_file(sessionname + 4);
 
     if (!sessionname || !*sessionname)
         sessionname = "Default Settings";
