@@ -28,13 +28,4 @@ Terminal-Agent 面向真实的封闭内网、堡垒机和生产环境，目标�
 > [!NOTE]
 > Terminal-Agent 目前仍处于开发阶段。上述内容是项目的规划方向，不表示当前版本已经具备完整能力或已经达到生产就绪状态。
 
-## 如何选择
-
-| 需求 | 推荐项目 |
-| --- | --- |
-| 希望 AI 帮助解释输出、分析问题或提供候选命令 | [PuTTY-Assistant](https://github.com/AI-DIY/PuTTY-Assistant) |
-| 强调用户确认、人工决策，不需要 AI 自主执行 | [PuTTY-Assistant](https://github.com/AI-DIY/PuTTY-Assistant) |
-| 面向封闭内网、堡垒机和真实生产环境 | [Terminal-Agent](https://github.com/AI-DIY/Terminal-Agent) |
-| 需要合规控制、操作审计、安全边界与任务可追溯 | [Terminal-Agent](https://github.com/AI-DIY/Terminal-Agent) |
-
 两个项目会按照各自的目标独立演进：**PuTTY-Assistant 专注于可靠、透明、由人主导的 AI 辅助体验；Terminal-Agent 专注于安全合规约束下的生产级终端智能体能力。**
