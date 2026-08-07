@@ -1,0 +1,40 @@
+# PuTTY-AI
+
+## 项目升级与分流说明
+
+> [!IMPORTANT]
+> PuTTY-AI 在升级过程中已拆分为两个定位和版本规划不同的项目：**PuTTY-Assistant** 与 **Terminal-Agent**。本仓库目前作为项目分流说明与导航入口，后续请根据实际使用场景前往对应仓库。
+
+## 两个项目的区别
+
+### [PuTTY-Assistant](https://github.com/AI-DIY/PuTTY-Assistant)：按需使用的 AI 助手
+
+PuTTY-Assistant 是放在 SSH 终端旁边的 AI 助手，主要帮助用户理解终端输出、分析日志、整理排查思路、解释命令并生成候选命令。
+
+- 由用户主动提问，终端上下文按需提供。
+- AI 给出解释、建议或候选命令，最终判断与执行权始终由用户掌握。
+- 不会自主规划任务、连续操作远程主机或替用户做决定。
+- 更适合日常开发、学习、测试和有人值守的运维辅助场景。
+
+### [Terminal-Agent](https://github.com/AI-DIY/Terminal-Agent)：面向内网与生产环境的终端智能体
+
+Terminal-Agent 面向真实的封闭内网、堡垒机和生产环境，目标是在安全、合规、可控和可追溯的前提下完成终端任务。
+
+- 重点适配内网、堡垒机及受限网络环境。
+- 围绕权限边界、风险控制、人工审批、操作审计和全程可追溯进行设计。
+- 目标是在明确约束下支持任务规划、工具调用和分步骤执行。
+- 版本规划以企业级安全合规和生产环境可靠性为核心。
+
+> [!NOTE]
+> Terminal-Agent 目前仍处于开发阶段。上述内容是项目的规划方向，不表示当前版本已经具备完整能力或已经达到生产就绪状态。
+
+## 如何选择
+
+| 需求 | 推荐项目 |
+| --- | --- |
+| 希望 AI 帮助解释输出、分析问题或提供候选命令 | [PuTTY-Assistant](https://github.com/AI-DIY/PuTTY-Assistant) |
+| 强调用户确认、人工决策，不需要 AI 自主执行 | [PuTTY-Assistant](https://github.com/AI-DIY/PuTTY-Assistant) |
+| 面向封闭内网、堡垒机和真实生产环境 | [Terminal-Agent](https://github.com/AI-DIY/Terminal-Agent) |
+| 需要合规控制、操作审计、安全边界与任务可追溯 | [Terminal-Agent](https://github.com/AI-DIY/Terminal-Agent) |
+
+两个项目会按照各自的目标独立演进：**PuTTY-Assistant 专注于可靠、透明、由人主导的 AI 辅助体验；Terminal-Agent 专注于安全合规约束下的生产级终端智能体能力。**
